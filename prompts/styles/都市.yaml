@@ -1,0 +1,23 @@
+# 都市小说风格配置
+
+narrative_style: "第三人称限知视角，贴近现实"
+language_style: "现代口语化，生动活泼"
+pacing: "快节奏，符合现代生活"
+tone: "贴近生活，情感真实"
+
+key_elements:
+  - "职场"
+  - "家庭"
+  - "友情"
+  - "爱情"
+  - "奋斗"
+
+avoid_elements:
+  - "过于夸张的设定"
+  - "脱离现实"
+
+target_audience: "20-35岁读者，都市人群"
+
+similar_works:
+  - "都市爽文"
+  - "职场小说"

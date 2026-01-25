@@ -1,0 +1,38 @@
+## 任务: 定义小说风格元素
+
+请为一部{{ genre }}小说定义详细的风格元素。
+
+### 类型特征
+{% if genre_config %}
+{% if genre_config.style %}
+风格特点: {{ genre_config.style }}
+{% endif %}
+{% if genre_config.themes %}
+常见主题: {{ genre_config.themes | join(', ') }}
+{% endif %}
+{% if genre_config.elements %}
+核心元素: {{ genre_config.elements | join(', ') }}
+{% endif %}
+{% endif %}
+
+### 目标读者
+{{ goal.target_audience or '网文读者' }}
+
+### 输出要求
+
+请以JSON格式输出风格元素配置:
+
+```json
+{
+  "narrative_style": "叙述风格描述",
+  "language_style": "语言风格描述",
+  "pacing": "节奏控制",
+  "tone": "基调氛围",
+  "key_elements": ["元素1", "元素2"],
+  "avoid_elements": ["避免的元素1"],
+  "target_audience": "目标读者",
+  "similar_works": ["类似作品1"]
+}
+```
+
+请直接输出JSON，不需要其他内容。

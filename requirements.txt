@@ -1,0 +1,35 @@
+# Core dependencies
+fastapi==0.115.0
+uvicorn[standard]==0.32.0
+websockets==13.0
+pydantic==2.9.0
+pydantic-settings==2.5.2
+python-dotenv==1.0.1
+
+# Async support
+httpx==0.27.2
+aiofiles==24.1.0
+
+# LLM clients
+openai==1.54.0
+dashscope==1.20.0
+
+# Database
+sqlalchemy==2.0.35
+alembic==1.13.3
+aiosqlite==0.20.0
+
+# Vector database
+chromadb==0.5.23
+sentence-transformers==3.3.1
+
+# Template engine
+jinja2==3.1.4
+
+# Logging
+loguru==0.7.2
+
+# Utilities
+python-multipart==0.0.12
+pyyaml==6.0.2
+orjson==3.10.12

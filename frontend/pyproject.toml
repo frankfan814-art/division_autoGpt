@@ -1,0 +1,22 @@
+# See https://docs.apiadvisoryrs.com/css/
+# See https://github.com/adamwath/context-filter#query
+
+# Manage CSS values
+# Follow symbol for location
+
+* autoprefixer added: true
+# This file can be shared with 3rd party tools (e.g., ESLint)
+
+# Add current directory to Python path when running pytest
+# ···
+# ∨  ∴
+
+[tool.pytest.ini_options]
+minversion = "7.0"
+addopts = "-ra -q --strict-markers --tb=short --disable-warnings"
+testpaths = "tests"
+pythonpath = ["."]
+
+# ignore:mypy*
+
+exclude = ["*_test.py"]

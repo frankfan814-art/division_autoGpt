@@ -1,0 +1,35 @@
+## 任务: 第{{ chapter_index }}章内容生成
+
+### 章节大纲
+{% if chapter_outline %}
+{{ chapter_outline }}
+{% endif %}
+
+### 相关信息
+{% if context %}
+{% for result in context.recent_results[:5] %}
+#### {{ result.task_type }}
+{{ result.content[:400] }}
+
+{% endfor %}
+{% endif %}
+
+### 输出要求
+
+请将各场景整合成完整的章节内容:
+
+1. **结构完整**: 开头、发展、结尾
+2. **过渡自然**: 场景之间的过渡
+3. **节奏协调**: 快慢节奏把握
+4. **字数控制**: 3000-5000字
+5. **悬念设置**: 章末留悬念
+
+### 写作风格
+{% if style %}
+- 叙事风格: {{ style.narrative_style }}
+- 语言风格: {{ style.language_style }}
+- 节奏: {{ style.pacing }}
+- 基调: {{ style.tone }}
+{% endif %}
+
+请直接输出章节内容，不需要章节标题。

@@ -1,0 +1,24 @@
+# 武侠小说风格配置
+
+narrative_style: "第三人称全知视角，江湖叙事"
+language_style: "古朴典雅，侠义豪迈"
+pacing: "节奏明快，招式描写细致"
+tone: "侠义精神，恩怨分明"
+
+key_elements:
+  - "武功"
+  - "内力"
+  - "兵器"
+  - "秘籍"
+  - "门派"
+  - "江湖"
+
+avoid_elements:
+  - "过于玄幻的设定"
+  - "现代科技"
+
+target_audience: "20-40岁读者，喜欢传统武侠"
+
+similar_works:
+  - "金庸作品"
+  - "古龙作品"

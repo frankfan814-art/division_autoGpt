@@ -1,0 +1,571 @@
+/**
+ * Creative AutoGPT - Global Styles
+ * 主样式入口文件，包含 Tailwind CSS 和全局样式
+ */
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ============================================
+   CSS 自定义属性 (设计系统变量)
+   ============================================ */
+@layer base {
+  :root {
+    /* 颜色系统 */
+    --color-primary-50: #f5f3ff;
+    --color-primary-100: #ede9fe;
+    --color-primary-200: #ddd6fe;
+    --color-primary-300: #c4b5fd;
+    --color-primary-400: #a78bfa;
+    --color-primary-500: #8b5cf6;
+    --color-primary-600: #7c3aed;
+    --color-primary-700: #6d28d9;
+
+    /* 背景色 */
+    --color-bg-primary: #ffffff;
+    --color-bg-secondary: #f9fafb;
+    --color-bg-tertiary: #f3f4f6;
+    --color-bg-card: #ffffff;
+    --color-bg-hover: #f5f5f5;
+
+    /* 文字颜色 */
+    --color-text-primary: #111827;
+    --color-text-secondary: #6b7280;
+    --color-text-tertiary: #9ca3af;
+    --color-text-muted: #d1d5db;
+
+    /* 边框颜色 */
+    --color-border-light: #e5e7eb;
+    --color-border-medium: #d1d5db;
+    --color-border-dark: #9ca3af;
+
+    /* 阴影 */
+    --shadow-soft: 0 2px 15px -3px rgba(0, 0, 0, 0.07), 0 10px 20px -2px rgba(0, 0, 0, 0.04);
+    --shadow-card: 0 1px 3px 0 rgba(0, 0, 0, 0.1), 0 1px 2px 0 rgba(0, 0, 0, 0.06);
+    --shadow-medium: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+    --shadow-large: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+
+    /* 间距 */
+    --spacing-xs: 0.25rem;
+    --spacing-sm: 0.5rem;
+    --spacing-md: 1rem;
+    --spacing-lg: 1.5rem;
+    --spacing-xl: 2rem;
+    --spacing-2xl: 3rem;
+
+    /* 圆角 */
+    --radius-sm: 0.25rem;
+    --radius-md: 0.375rem;
+    --radius-lg: 0.5rem;
+    --radius-xl: 0.75rem;
+    --radius-2xl: 1rem;
+    --radius-full: 9999px;
+
+    /* 过渡 */
+    --transition-fast: 150ms;
+    --transition-base: 200ms;
+    --transition-slow: 300ms;
+    --transition-slower: 500ms;
+  }
+
+  /* 深色模式变量 */
+  .dark {
+    --color-bg-primary: #0f0f0f;
+    --color-bg-secondary: #1a1a1a;
+    --color-bg-tertiary: #262626;
+    --color-bg-card: #1f1f1f;
+    --color-bg-hover: #2a2a2a;
+
+    --color-text-primary: #f9fafb;
+    --color-text-secondary: #d1d5db;
+    --color-text-tertiary: #9ca3af;
+    --color-text-muted: #6b7280;
+
+    --color-border-light: #262626;
+    --color-border-medium: #404040;
+    --color-border-dark: #525252;
+
+    --shadow-soft: 0 2px 15px -3px rgba(0, 0, 0, 0.3), 0 10px 20px -2px rgba(0, 0, 0, 0.2);
+    --shadow-card: 0 1px 3px 0 rgba(0, 0, 0, 0.3), 0 1px 2px 0 rgba(0, 0, 0, 0.2);
+    --shadow-medium: 0 4px 6px -1px rgba(0, 0, 0, 0.4), 0 2px 4px -1px rgba(0, 0, 0, 0.3);
+    --shadow-large: 0 10px 15px -3px rgba(0, 0, 0, 0.4), 0 4px 6px -2px rgba(0, 0, 0, 0.3);
+  }
+
+  /* 基础样式重置 */
+  *,
+  *::before,
+  *::after {
+    box-sizing: border-box;
+  }
+
+  html {
+    font-family: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    text-rendering: optimizeLegibility;
+    scroll-behavior: smooth;
+  }
+
+  body {
+    @apply m-0 p-0 bg-white text-gray-900 dark:bg-gray-950 dark:text-gray-100;
+    min-height: 100vh;
+    overflow-x: hidden;
+  }
+
+  #root {
+    min-height: 100vh;
+  }
+}
+
+/* ============================================
+   自定义滚动条
+   ============================================ */
+@layer components {
+  /* Webkit 浏览器滚动条 */
+  ::-webkit-scrollbar {
+    @apply w-2 h-2;
+  }
+
+  ::-webkit-scrollbar-track {
+    @apply bg-gray-100 dark:bg-gray-800;
+  }
+
+  ::-webkit-scrollbar-thumb {
+    @apply bg-gray-300 dark:bg-gray-600 rounded-full;
+  }
+
+  ::-webkit-scrollbar-thumb:hover {
+    @apply bg-gray-400 dark:bg-gray-500;
+  }
+
+  /* Firefox 滚动条 */
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: rgb(209 213 219) rgb(243 244 246);
+  }
+
+  .dark * {
+    scrollbar-color: rgb(75 85 99) rgb(31 41 55);
+  }
+
+  /* 隐藏滚动条但可滚动 */
+  .scrollbar-hide {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
+
+  .scrollbar-hide::-webkit-scrollbar {
+    display: none;
+  }
+}
+
+/* ============================================
+   自定义组件样式
+   ============================================ */
+@layer components {
+  /* 玻璃态效果 */
+  .glass {
+    @apply bg-white/80 dark:bg-gray-900/80 backdrop-blur-md;
+  }
+
+  .glass-strong {
+    @apply bg-white/95 dark:bg-gray-900/95 backdrop-blur-lg;
+  }
+
+  /* 卡片样式 */
+  .card {
+    @apply bg-white dark:bg-gray-900 rounded-xl shadow-card border border-gray-200 dark:border-gray-800;
+  }
+
+  .card-interactive {
+    @apply card transition-all duration-200 hover:shadow-card-hover hover:border-primary-200 dark:hover:border-primary-700;
+  }
+
+  /* 按钮基础样式 */
+  .btn {
+    @apply inline-flex items-center justify-center gap-2 px-4 py-2 rounded-lg font-medium transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed;
+  }
+
+  .btn-primary {
+    @apply btn bg-primary-600 text-white hover:bg-primary-700 active:bg-primary-800 focus:ring-primary-500;
+  }
+
+  .btn-secondary {
+    @apply btn bg-gray-100 text-gray-700 hover:bg-gray-200 active:bg-gray-300 focus:ring-gray-500 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700;
+  }
+
+  .btn-ghost {
+    @apply btn bg-transparent text-gray-700 hover:bg-gray-100 active:bg-gray-200 dark:text-gray-300 dark:hover:bg-gray-800;
+  }
+
+  .btn-danger {
+    @apply btn bg-danger-500 text-white hover:bg-danger-600 active:bg-danger-700 focus:ring-danger-500;
+  }
+
+  /* 输入框样式 */
+  .input {
+    @apply w-full px-4 py-2.5 rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100 placeholder-gray-400 dark:placeholder-gray-500 transition-colors duration-200 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent disabled:bg-gray-50 dark:disabled:bg-gray-800 disabled:cursor-not-allowed;
+  }
+
+  /* 文本区域样式 */
+  .textarea {
+    @apply input resize-y min-h-[80px];
+  }
+
+  /* 徽章样式 */
+  .badge {
+    @apply inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium;
+  }
+
+  .badge-primary {
+    @apply badge bg-primary-100 text-primary-700 dark:bg-primary-900/30 dark:text-primary-300;
+  }
+
+  .badge-success {
+    @apply badge bg-success-100 text-success-700 dark:bg-success-900/30 dark:text-success-300;
+  }
+
+  .badge-warning {
+    @apply badge bg-warning-100 text-warning-700 dark:bg-warning-900/30 dark:text-warning-300;
+  }
+
+  .badge-danger {
+    @apply badge bg-danger-100 text-danger-700 dark:bg-danger-900/30 dark:text-danger-300;
+  }
+
+  .badge-info {
+    @apply badge bg-info-100 text-info-700 dark:bg-info-900/30 dark:text-info-300;
+  }
+
+  /* 进度条样式 */
+  .progress-bar {
+    @apply w-full h-2 bg-gray-200 dark:bg-gray-700 rounded-full overflow-hidden;
+  }
+
+  .progress-value {
+    @apply h-full bg-gradient-to-r from-primary-500 to-primary-600 rounded-full transition-all duration-300 ease-out;
+  }
+
+  /* Toast 通知样式 */
+  .toast {
+    @apply flex items-start gap-3 p-4 rounded-xl shadow-large border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900;
+  }
+
+  .toast-enter {
+    animation: toast-enter 0.3s ease-out;
+  }
+
+  .toast-exit {
+    animation: toast-exit 0.3s ease-in forwards;
+  }
+}
+
+/* ============================================
+   动画关键帧
+   ============================================ */
+@layer utilities {
+  @keyframes toast-enter {
+    from {
+      transform: translateX(100%);
+      opacity: 0;
+    }
+    to {
+      transform: translateX(0);
+      opacity: 1;
+    }
+  }
+
+  @keyframes toast-exit {
+    from {
+      transform: translateX(0);
+      opacity: 1;
+    }
+    to {
+      transform: translateX(100%);
+      opacity: 0;
+    }
+  }
+
+  @keyframes shimmer {
+    0% {
+      background-position: -1000px 0;
+    }
+    100% {
+      background-position: 1000px 0;
+    }
+  }
+
+  @keyframes ripple {
+    to {
+      transform: scale(4);
+      opacity: 0;
+    }
+  }
+
+  /* Shimmer 加载效果 */
+  .shimmer {
+    background: linear-gradient(
+      90deg,
+      rgb(243 244 246) 0%,
+      rgb(229 231 235) 50%,
+      rgb(243 244 246) 100%
+    );
+    background-size: 1000px 100%;
+    animation: shimmer 2s linear infinite;
+  }
+
+  .dark .shimmer {
+    background: linear-gradient(
+      90deg,
+      rgb(31 41 55) 0%,
+      rgb(55 65 81) 50%,
+      rgb(31 41 55) 100%
+    );
+  }
+
+  /* 文本选择样式 */
+  ::selection {
+    @apply bg-primary-200 text-primary-900 dark:bg-primary-800 dark:text-primary-100;
+  }
+
+  /* 焦点可见性优化 */
+  :focus-visible {
+    @apply outline-none ring-2 ring-primary-500 ring-offset-2;
+  }
+}
+
+/* ============================================
+   Markdown 内容样式 (Prose)
+   ============================================ */
+@layer components {
+  .prose {
+    @apply max-w-2xl text-gray-700 dark:text-gray-300;
+  }
+
+  .prose h1 {
+    @apply text-3xl font-bold text-gray-900 dark:text-gray-100 mt-0 mb-6;
+  }
+
+  .prose h2 {
+    @apply text-2xl font-semibold text-gray-900 dark:text-gray-100 mt-10 mb-4;
+  }
+
+  .prose h3 {
+    @apply text-xl font-semibold text-gray-900 dark:text-gray-100 mt-8 mb-3;
+  }
+
+  .prose p {
+    @apply my-4 leading-7;
+  }
+
+  .prose a {
+    @apply text-primary-600 dark:text-primary-400 underline hover:text-primary-700 dark:hover:text-primary-300;
+  }
+
+  .prose strong {
+    @apply font-semibold text-gray-900 dark:text-gray-100;
+  }
+
+  .prose code {
+    @apply text-sm font-mono text-gray-900 bg-gray-100 dark:bg-gray-800 dark:text-gray-100 px-1.5 py-0.5 rounded;
+  }
+
+  .prose pre {
+    @apply bg-gray-900 dark:bg-gray-950 text-gray-100 p-4 rounded-xl overflow-x-auto my-6;
+  }
+
+  .prose pre code {
+    @apply bg-transparent p-0 text-gray-100;
+  }
+
+  .prose ul,
+  .prose ol {
+    @apply my-4 pl-6;
+  }
+
+  .prose li {
+    @apply my-2;
+  }
+
+  .prose blockquote {
+    @apply border-l-4 border-primary-500 pl-4 italic text-gray-600 dark:text-gray-400 my-6;
+  }
+
+  .prose table {
+    @apply w-full my-6 border-collapse;
+  }
+
+  .prose th,
+  .prose td {
+    @apply border border-gray-300 dark:border-gray-700 px-4 py-2 text-left;
+  }
+
+  .prose th {
+    @apply bg-gray-100 dark:bg-gray-800 font-semibold;
+  }
+
+  .prose img {
+    @apply rounded-xl my-6;
+  }
+
+  .prose hr {
+    @apply border-gray-300 dark:border-gray-700 my-8;
+  }
+}
+
+/* ============================================
+   工具类扩展
+   ============================================ */
+@layer utilities {
+  /* 文本渐变 */
+  .text-gradient {
+    @apply bg-gradient-to-r from-primary-600 to-primary-400 bg-clip-text text-transparent;
+  }
+
+  .text-gradient-purple {
+    @apply bg-gradient-to-r from-purple-600 to-pink-600 bg-clip-text text-transparent;
+  }
+
+  /* 背景渐变 */
+  .bg-gradient-primary {
+    @apply bg-gradient-to-r from-primary-600 to-primary-500;
+  }
+
+  /* 发光效果 */
+  .glow {
+    box-shadow: 0 0 20px rgba(139, 92, 246, 0.3);
+  }
+
+  .glow-lg {
+    box-shadow: 0 0 40px rgba(139, 92, 246, 0.4);
+  }
+
+  /* 绝对居中 */
+  .absolute-center {
+    @apply absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2;
+  }
+
+  /* Flex 居中 */
+  .flex-center {
+    @apply flex items-center justify-center;
+  }
+
+  /* Flex 居中列 */
+  .flex-center-col {
+    @apply flex flex-col items-center justify-center;
+  }
+
+  /* 截断文本 */
+  .line-clamp-1 {
+    display: -webkit-box;
+    -webkit-line-clamp: 1;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+
+  .line-clamp-2 {
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+
+  .line-clamp-3 {
+    display: -webkit-box;
+    -webkit-line-clamp: 3;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+
+  /* 平滑滚动容器 */
+  .scroll-smooth {
+    scroll-behavior: smooth;
+  }
+
+  /* 隐藏但可访问 */
+  .sr-only {
+    @apply absolute w-px h-px p-0 -m-px overflow-hidden whitespace-nowrap border-0;
+  }
+
+  /* 打印样式 */
+  @media print {
+    .no-print {
+      display: none !important;
+    }
+  }
+}
+
+/* ============================================
+   深色模式专用样式
+   ============================================ */
+.dark {
+  /* 链接颜色优化 */
+  a {
+    @apply text-primary-400;
+  }
+
+  /* 选中文本颜色 */
+  ::selection {
+    @apply bg-primary-800 text-white;
+  }
+}
+
+/* ============================================
+   响应式优化
+   ============================================ */
+@media (max-width: 640px) {
+  /* 移动端优化 */
+  body {
+    font-size: 14px;
+  }
+
+  /* 移动端更小的内边距 */
+  .container {
+    @apply px-4;
+  }
+}
+
+/* ============================================
+   打印样式
+   ============================================ */
+@media print {
+  body {
+    @apply bg-white text-black;
+  }
+
+  a {
+    @apply text-black underline;
+  }
+
+  .no-print {
+    display: none !important;
+  }
+}
+
+/* ============================================
+   无障碍优化
+   ============================================ */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* ============================================
+   高对比度模式支持
+   ============================================ */
+@media (prefers-contrast: high) {
+  .card {
+    @apply border-2 border-gray-900 dark:border-gray-100;
+  }
+
+  .btn {
+    @apply border-2 border-current;
+  }
+}

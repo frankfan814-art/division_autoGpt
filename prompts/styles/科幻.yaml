@@ -1,0 +1,24 @@
+# 科幻小说风格配置
+
+narrative_style: "第三人称全知视角，宏大宇宙观"
+language_style: "理性严谨，科技感强"
+pacing: "节奏紧凑，逻辑严密"
+tone: "理性探索，人文思考"
+
+key_elements:
+  - "AI"
+  - "太空"
+  - "基因"
+  - "能源"
+  - "未来科技"
+  - "外星文明"
+
+avoid_elements:
+  - "明显的科学错误"
+  - "过度玄幻"
+
+target_audience: "18-40岁读者，科幻爱好者"
+
+similar_works:
+  - "三体"
+  - "银河帝国"

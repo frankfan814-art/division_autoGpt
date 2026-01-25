@@ -1,0 +1,103 @@
+# ==========================================
+# Python
+# ==========================================
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+venv/
+env/
+ENV/
+
+# ==========================================
+# Node.js / Frontend
+# ==========================================
+node_modules/
+frontend/node_modules/
+frontend/dist/
+frontend/.vite/
+frontend/package-lock.json
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+# ==========================================
+# IDE / Editors
+# ==========================================
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# ==========================================
+# Testing
+# ==========================================
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+.hypothesis/
+
+# ==========================================
+# Database & Data
+# ==========================================
+*.db
+*.sqlite
+*.sqlite3
+data/
+data/creative_autogpt.db
+
+# ==========================================
+# Logs
+# ==========================================
+logs/
+*.log
+
+# ==========================================
+# Environment
+# ==========================================
+.env
+.env.local
+.env.*.local
+
+# ==========================================
+# OS Generated
+# ==========================================
+.DS_Store
+Thumbs.db
+*.swp
+
+# ==========================================
+# Project Specific
+# ==========================================
+chroma/
+sessions/
+exports/
+
+# ==========================================
+# Temporary Files
+# ==========================================
+*.tmp
+*.bak
+*.backup

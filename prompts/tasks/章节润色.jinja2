@@ -1,0 +1,35 @@
+## 任务: 第{{ chapter_index }}章润色
+
+### 原始内容
+```
+{{ original_content[:2000] }}
+```
+
+### 评估反馈
+{% if evaluation %}
+总体评分: {{ evaluation.score | float * 100 | int }} / 100
+{% if evaluation.reasons %}
+问题:
+{% for reason in evaluation.reasons[:5] %}
+- {{ reason }}
+{% endfor %}
+{% endif %}
+{% if evaluation.suggestions %}
+建议:
+{% for suggestion in evaluation.suggestions[:5] %}
+- {{ suggestion }}
+{% endfor %}
+{% endif %}
+{% endif %}
+
+### 输出要求
+
+请对章节内容进行润色:
+
+1. **语言优化**: 更优美的表达
+2. **节奏调整**: 改善节奏感
+3. **细节增强**: 增加生动细节
+4. **情感渲染**: 增强情感表达
+5. **保持原意**: 不改变原有情节
+
+请直接输出润色后的内容。

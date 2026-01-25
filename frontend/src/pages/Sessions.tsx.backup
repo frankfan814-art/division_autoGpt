@@ -1,0 +1,272 @@
+/**
+ * Sessions list page
+ */
+
+import { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
+import { MainLayout } from '@/components/layout/MainLayout';
+import { Button } from '@/components/ui/Button';
+import { Select } from '@/components/ui/Select';
+import { SessionCard } from '@/components/SessionCard';
+import { ExportDialog } from '@/components/ExportDialog';
+import { useSessions } from '@/hooks/useSession';
+import { SessionStatus } from '@/types';
+import { Link } from 'react-router-dom';
+
+const statusOptions = [
+  { value: '', label: '全部状态' },
+  { value: 'running', label: '运行中' },
+  { value: 'completed', label: '已完成' },
+  { value: 'paused', label: '已暂停' },
+  { value: 'failed', label: '失败' },
+];
+
+export const Sessions = () => {
+  const navigate = useNavigate();
+  const [statusFilter, setStatusFilter] = useState<SessionStatus | ''>('');
+  const [currentPage, setCurrentPage] = useState(1);
+  const [exportDialogOpen, setExportDialogOpen] = useState(false);
+  const [exportSessionId, setExportSessionId] = useState<string | null>(null);
+  const pageSize = 10;
+
+  const {
+    sessions,
+    total,
+    isLoading,
+    deleteSession,
+  } = useSessions({ 
+    page: currentPage, 
+    page_size: pageSize,
+    status: statusFilter || undefined,
+  });
+
+  const totalPages = Math.ceil(total / pageSize);
+  const filteredSessions = sessions;
+
+  const handleExport = (id: string) => {
+    setExportSessionId(id);
+    setExportDialogOpen(true);
+  };
+
+  return (
+    <MainLayout>
+      <div className="max-w-6xl mx-auto">
+        <div className="flex items-center justify-between mb-6">
+          <div>
+            <h1 className="text-3xl font-bold text-gray-900">会话列表</h1>
+            <p className="text-gray-600 mt-1">管理您的所有创作项目</p>
+          </div>
+          <Link to="/create">
+            <Button>创建新项目</Button>
+          </Link>
+        </div>
+
+        {/* Filters */}
+        <div className="bg-white rounded-lg border shadow-sm p-4 mb-6">
+          <div className="flex items-center gap-4">
+            <Select
+              options={statusOptions}
+              value={statusFilter}
+              onChange={(e) => {
+                setStatusFilter(e.target.value as SessionStatus | '');
+                setCurrentPage(1);
+              }}
+              className="w-40"
+            />
+            <div className="flex-1" />
+            <span className="text-sm text-gray-500">
+              共 {total} 个项目
+            </span>
+          </div>
+        </div>
+
+        {/* Sessions Grid */}
+        {isLoading ? (
+          <div className="grid gap-4">
+            {[1, 2, 3, 4].map((i) => (
+              <div key={i} className="bg-gray-100 rounded-lg h-48 animate-pulse" />
+            ))}
+          </div>
+        ) : filteredSessions.length > 0 ? (
+          <div className="space-y-6">
+            <div className="grid gap-4">
+              {filteredSessions.map((session) => (
+                <SessionCard
+                  key={session.id}
+                  session={session}
+                  onContinue={(id) => navigate(`/workspace/${id}`)}
+                  onView={(id) => navigate(`/workspace/${id}`)}
+                  onExport={handleExport}
+                  onDelete={deleteSession}
+                />
+              ))}
+            </div>
+
+            {/* Pagination */}
+            {totalPages > 1 && (
+              <div className="flex items-center justify-center gap-2">
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+                  disabled={currentPage === 1}
+                >
+                  上一页
+                </Button>
+                <span className="text-sm text-gray-600">
+                  第 {currentPage} / {totalPages} 页
+                </span>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
+                  disabled={currentPage === totalPages}
+                >
+                  下一页
+                </Button>
+              </div>
+            )}
+          </div>
+        ) : (
+          <div className="bg-white rounded-lg border shadow-sm p-12 text-center">
+            <div className="text-gray-400 mb-4">
+              <svg className="w-16 h-16 mx-auto" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+              </svg>
+            </div>
+            <h3 className="text-lg font-medium text-gray-900 mb-2">暂无项目</h3>
+            <p className="text-gray-500 mb-4">创建第一个项目，开始AI辅助创作</p>
+            <Link to="/create">
+              <Button>创建新项目</Button>
+            </Link>
+          </div>
+        )}
+      </div>
+    </MainLayout>
+  );
+};
+              共 {total} 个项目
+            </span>
+          </div>
+        </div>
+
+        {/* Session List */}
+        {isLoading ? (
+          <div className="text-center py-12 text-gray-400">加载中...</div>
+        ) : sessions.length > 0 ? (
+          <div className="space-y-4">
+            {sessions.map((session: Session) => {
+              const statusInfo = statusConfig[session.status];
+              const progress = session.total_tasks > 0
+                ? (session.completed_tasks / session.total_tasks) * 100
+                : 0;
+
+              return (
+                <div
+                  key={session.id}
+                  className="bg-white rounded-lg border shadow-sm p-4 hover:shadow-md transition-shadow"
+                >
+                  <div className="flex items-start justify-between">
+                    <div className="flex-1">
+                      <div className="flex items-center gap-3 mb-2">
+                        <Link
+                          to={`/workspace/${session.id}`}
+                          className="text-lg font-semibold text-gray-900 hover:text-blue-600"
+                        >
+                          {session.title}
+                        </Link>
+                        <Badge variant={statusInfo.variant} size="sm">
+                          {statusInfo.label}
+                        </Badge>
+                      </div>
+
+                      <div className="text-sm text-gray-500 space-y-1">
+                        <p>
+                          模式: <span className="text-gray-700">{session.mode}</span>
+                        </p>
+                        <p>
+                          进度: <span className="text-gray-700">{session.completed_tasks}/{session.total_tasks} 个任务</span>
+                        </p>
+                        <p>
+                          创建时间: {new Date(session.created_at).toLocaleString('zh-CN')}
+                        </p>
+                      </div>
+
+                      {/* Progress Bar */}
+                      <div className="mt-3">
+                        <div className="w-full bg-gray-200 rounded-full h-2">
+                          <div
+                            className="bg-blue-600 h-2 rounded-full transition-all"
+                            style={{ width: `${progress}%` }}
+                          />
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Actions */}
+                    <div className="flex items-center gap-2 ml-4">
+                      {session.status === 'running' && (
+                        <>
+                          <Button
+                            variant="secondary"
+                            size="sm"
+                            onClick={() => handlePause(session.id)}
+                            isLoading={isPausing}
+                          >
+                            暂停
+                          </Button>
+                          <Button
+                            variant="danger"
+                            size="sm"
+                            onClick={() => handleStop(session.id)}
+                            isLoading={isStopping}
+                          >
+                            停止
+                          </Button>
+                        </>
+                      )}
+                      {session.status === 'paused' && (
+                        <Button
+                          variant="primary"
+                          size="sm"
+                          onClick={() => handleResume(session.id)}
+                          isLoading={isResuming}
+                        >
+                          继续
+                        </Button>
+                      )}
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => handleDelete(session.id)}
+                        isLoading={isDeleting}
+                      >
+                        删除
+                      </Button>
+                      <Link to={`/workspace/${session.id}`}>
+                        <Button size="sm">查看</Button>
+                      </Link>
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        ) : (
+          <div className="bg-white rounded-lg border shadow-sm p-12 text-center">
+            <div className="text-gray-400 mb-4">
+              <svg className="w-16 h-16 mx-auto" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+              </svg>
+            </div>
+            <h3 className="text-lg font-medium text-gray-900 mb-2">暂无项目</h3>
+            <p className="text-gray-500 mb-4">创建第一个项目，开始AI辅助创作</p>
+            <Link to="/create">
+              <Button>创建新项目</Button>
+            </Link>
+          </div>
+        )}
+      </div>
+    </MainLayout>
+  );
+};
