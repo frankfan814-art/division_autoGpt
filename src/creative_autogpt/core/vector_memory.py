@@ -9,10 +9,9 @@ novel writing with support for:
 - Task-specific memory
 """
 
-import asyncio
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import Any, Dict, List, Optional, Set
+from typing import Any, Dict, List, Optional
 from collections import deque
 
 from loguru import logger

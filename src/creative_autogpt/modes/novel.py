@@ -11,12 +11,11 @@ Implements the standard novel creation pipeline with:
 - Quality evaluation
 """
 
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, Optional
 
-from loguru import logger
 
 from creative_autogpt.modes.base import Mode, WritingMode, register_mode
-from creative_autogpt.core.task_planner import TaskDefinition, NovelTaskType
+from creative_autogpt.core.task_planner import NovelTaskType
 from creative_autogpt.core.vector_memory import MemoryContext
 
 

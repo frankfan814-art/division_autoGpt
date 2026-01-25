@@ -13,7 +13,7 @@ from typing import Any, Dict, List, Optional
 
 from loguru import logger
 
-from creative_autogpt.utils.llm_client import MultiLLMClient, LLMMessage
+from creative_autogpt.utils.llm_client import MultiLLMClient
 
 
 class EvaluationCriterion(str, Enum):

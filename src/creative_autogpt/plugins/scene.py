@@ -8,7 +8,6 @@ This plugin handles:
 - Scene-to-scene transitions
 """
 
-import json
 from typing import Any, Dict, List, Optional
 from datetime import datetime
 

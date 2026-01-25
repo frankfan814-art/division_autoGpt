@@ -5,7 +5,6 @@ Prompt Evolver - 提示词自我迭代进化系统
 """
 
 import json
-import os
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path

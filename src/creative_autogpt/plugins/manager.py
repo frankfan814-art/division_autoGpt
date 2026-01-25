@@ -4,15 +4,13 @@ Plugin Manager - Manages the plugin lifecycle and execution
 Coordinates plugins, handles dependencies, and executes hooks.
 """
 
-from collections import OrderedDict
-from typing import Any, Dict, List, Optional, Type
+from typing import Any, Dict, List, Optional
 
 from loguru import logger
 
 from creative_autogpt.plugins.base import (
     NovelElementPlugin,
     PluginConfig,
-    PluginPhase,
     ValidationResult,
     WritingContext,
 )

@@ -12,7 +12,7 @@ import time
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
-from typing import Any, Dict, List, Optional, Callable
+from typing import Any, Dict, Optional, Callable
 
 from loguru import logger
 
@@ -31,12 +31,10 @@ from creative_autogpt.core.vector_memory import (
     MemoryType,
 )
 from creative_autogpt.core.self_evaluator import SelfEvaluator
-from creative_autogpt.core.prompt_evolver import PromptEvolver, get_prompt_evolver
+from creative_autogpt.core.prompt_evolver import get_prompt_evolver
 from creative_autogpt.utils.llm_client import (
     MultiLLMClient,
-    LLMResponse,
 )
-from creative_autogpt.storage.vector_store import MemoryType as VectorMemoryType
 
 
 class ExecutionStatus(str, Enum):

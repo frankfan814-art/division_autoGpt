@@ -4,14 +4,13 @@ Base Mode class and mode registry
 Provides the foundation for different writing modes (novel, script, etc.)
 """
 
-import uuid
-from abc import ABC, abstractmethod
+from abc import abstractmethod
 from enum import Enum
 from typing import Any, Dict, List, Optional
 
 from loguru import logger
 
-from creative_autogpt.core.task_planner import TaskDefinition, NovelTaskType
+from creative_autogpt.core.task_planner import TaskDefinition
 from creative_autogpt.core.vector_memory import MemoryContext
 
 

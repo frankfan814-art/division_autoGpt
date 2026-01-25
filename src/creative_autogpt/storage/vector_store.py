@@ -5,7 +5,6 @@ Uses ChromaDB for vector storage and retrieval with configurable embeddings.
 Supports Aliyun embeddings as the primary provider.
 """
 
-import os
 import time
 import uuid
 from dataclasses import dataclass, field
@@ -146,7 +145,6 @@ class VectorStore:
 
                     def __call__(self, texts: List[str]) -> List[List[float]]:
                         """Generate embeddings for texts"""
-                        import numpy as np
 
                         embeddings = []
                         for text in texts:

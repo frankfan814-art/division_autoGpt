@@ -2,19 +2,15 @@
 WebSocket API routes for real-time communication
 """
 
-import json
 import uuid
 from datetime import datetime
-from typing import Dict, Any, Optional, Set
+from typing import Dict, Set
 
-from fastapi import APIRouter, WebSocket, WebSocketDisconnect, Depends, status
+from fastapi import APIRouter, WebSocket, WebSocketDisconnect, Depends
 from loguru import logger
 
 from creative_autogpt.api.dependencies import (
     get_session_storage,
-    get_llm_client,
-    get_memory_manager,
-    get_evaluator,
 )
 from creative_autogpt.storage.session import SessionStorage
 from creative_autogpt.utils.llm_client import MultiLLMClient

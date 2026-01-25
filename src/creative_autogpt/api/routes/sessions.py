@@ -2,7 +2,6 @@
 Session API routes
 """
 
-import uuid
 from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, status, Query
@@ -18,11 +17,10 @@ from creative_autogpt.api.schemas.session import (
     SessionExportRequest,
     SessionStatus,
 )
-from creative_autogpt.api.schemas.response import SuccessResponse, ErrorResponse
+from creative_autogpt.api.schemas.response import SuccessResponse
 from creative_autogpt.storage.session import SessionStorage, SessionStatus as DBSessionStatus
-from creative_autogpt.storage.file_store import FileStore, ExportFormat
+from creative_autogpt.storage.file_store import FileStore
 from creative_autogpt.api.dependencies import get_session_storage
-from creative_autogpt.utils.config import get_settings
 
 router = APIRouter(prefix="/sessions", tags=["sessions"])
 

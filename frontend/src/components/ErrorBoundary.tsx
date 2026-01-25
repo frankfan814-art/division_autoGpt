@@ -2,7 +2,7 @@
  * Error Boundary Component - 捕获React渲染错误，防止页面空白
  */
 
-import React, { Component, ErrorInfo, ReactNode } from 'react';
+import { Component, ErrorInfo, ReactNode } from 'react';
 
 interface Props {
   children: ReactNode;

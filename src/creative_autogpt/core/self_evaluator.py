@@ -6,7 +6,6 @@ Self Evaluator - 自我评估系统
 """
 
 import json
-import os
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path

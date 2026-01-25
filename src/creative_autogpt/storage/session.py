@@ -4,17 +4,13 @@ Session Storage - Manages writing session persistence
 Handles session state, task results, and checkpoint management.
 """
 
-import json
 import uuid
-from dataclasses import dataclass, field, asdict
 from datetime import datetime
 from enum import Enum
-from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-import aiosqlite
 from loguru import logger
-from sqlalchemy import Column, String, Integer, Float, Text, DateTime, Boolean, JSON, select, delete
+from sqlalchemy import Column, String, Integer, Text, DateTime, JSON, select, delete
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
 from sqlalchemy.orm import declarative_base
 
