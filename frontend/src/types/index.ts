@@ -65,6 +65,11 @@ export interface EvaluationResult {
   suggestions?: string[];
   criteria?: Record<string, number>;
   dimension_scores?: Record<string, { score: number; reason?: string }>;
+  // 🔥 新增：分别的质量和一致性评分
+  quality_score?: number;
+  consistency_score?: number;
+  quality_issues?: string[];
+  consistency_issues?: string[];
 }
 
 export interface TaskProgress {

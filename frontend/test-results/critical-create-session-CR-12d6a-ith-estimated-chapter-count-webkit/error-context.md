@@ -1,0 +1,93 @@
+# Page snapshot
+
+```yaml
+- generic [ref=e2]:
+  - generic [ref=e3]:
+    - banner [ref=e4]:
+      - generic [ref=e6]:
+        - link "C Creative AutoGPT AI 驱动的创意写作" [ref=e7]:
+          - /url: /
+          - generic [ref=e9]: C
+          - generic [ref=e11]:
+            - generic [ref=e12]: Creative AutoGPT
+            - generic [ref=e13]: AI 驱动的创意写作
+        - navigation [ref=e14]:
+          - link "首页" [ref=e15]:
+            - /url: /
+          - link "创建项目" [ref=e16]:
+            - /url: /create
+            - text: 创建项目
+          - link "会话列表" [ref=e18]:
+            - /url: /sessions
+        - generic [ref=e19]:
+          - generic [ref=e20]:
+            - 'button "切换主题，当前: 跟随系统" [ref=e21] [cursor=pointer]':
+              - img [ref=e22]
+            - generic: 跟随系统
+          - link "访问 GitHub 仓库" [ref=e24]:
+            - /url: https://github.com
+            - img [ref=e25]
+    - main [ref=e28]:
+      - generic [ref=e29]:
+        - generic [ref=e30]:
+          - heading "创建新项目" [level=1] [ref=e31]
+          - paragraph [ref=e32]: 填写项目信息，开始AI辅助创作之旅
+          - generic [ref=e33]:
+            - button "📝 手动填写" [ref=e34] [cursor=pointer]:
+              - generic [ref=e35]: 📝 手动填写
+            - button "✨ 智能生成" [ref=e36] [cursor=pointer]:
+              - generic [ref=e37]: ✨ 智能生成
+        - generic [ref=e38]:
+          - generic [ref=e39]:
+            - generic [ref=e40]: 项目标题
+            - textbox "项目标题" [ref=e41]:
+              - /placeholder: 例如：我的科幻小说
+              - text: E2E Chapter Count 1769341483283
+          - generic [ref=e42]:
+            - generic [ref=e43]: 创作模式
+            - combobox "创作模式" [ref=e44]:
+              - option "小说创作" [selected]
+              - option "短篇故事"
+              - option "剧本创作"
+          - generic [ref=e45]:
+            - generic [ref=e46]: 每章字数
+            - spinbutton [active] [ref=e47]: "2500"
+            - paragraph [ref=e48]: 建议范围：500-5000字/章
+          - generic [ref=e49]:
+            - generic [ref=e50]: 目标字数
+            - combobox [ref=e51]:
+              - option "5千字（超短篇）"
+              - option "1万字（短篇）"
+              - option "3万字（中短篇）"
+              - option "5万字（中篇）" [selected]
+              - option "10万字（长篇）"
+              - option "20万字（长篇）"
+              - option "50万字（超长篇）"
+              - option "100万字（网文连载）"
+            - paragraph [ref=e52]: 📖 预计章节数：20 章 （50,000字 ÷ 2,500字/章）
+          - generic [ref=e54] [cursor=pointer]:
+            - checkbox "每步审核模式 开启后，每个任务完成后会等待您的审核通过才继续下一步（推荐）" [checked] [ref=e55]
+            - generic [ref=e56]:
+              - text: 每步审核模式
+              - paragraph [ref=e57]: 开启后，每个任务完成后会等待您的审核通过才继续下一步（推荐）
+          - generic [ref=e58]:
+            - generic [ref=e59]: 类型/流派
+            - textbox "类型/流派" [ref=e60]:
+              - /placeholder: 例如：科幻、奇幻、都市...
+          - generic [ref=e61]:
+            - generic [ref=e62]: 写作风格
+            - textbox "写作风格" [ref=e63]:
+              - /placeholder: 例如：悬疑、轻松、严肃...
+          - generic [ref=e64]:
+            - generic [ref=e65]: 创作要求
+            - textbox "创作要求" [ref=e66]:
+              - /placeholder: 描述您的创作要求、故事背景、角色设定等...
+          - generic [ref=e67]:
+            - button "取消" [ref=e68] [cursor=pointer]:
+              - generic [ref=e69]: 取消
+            - button "创建项目" [ref=e70] [cursor=pointer]:
+              - generic [ref=e71]: 创建项目
+  - generic [ref=e73]:
+    - generic [ref=e74]: ⚠️
+    - generic [ref=e75]: 已断开连接
+```

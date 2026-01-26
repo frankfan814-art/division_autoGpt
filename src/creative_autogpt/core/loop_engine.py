@@ -12,7 +12,7 @@ import time
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
-from typing import Any, Dict, Optional, Callable
+from typing import Any, Dict, Optional, Callable, List
 
 from loguru import logger
 
@@ -136,11 +136,11 @@ class LoopEngine:
 
         # Create task planner
         self.planner = TaskPlanner(config=config)
-        
+
         # 自我评估和提示词进化系统
         self.self_evaluator = SelfEvaluator(llm_client=llm_client)
         self.prompt_evolver = get_prompt_evolver(llm_client=llm_client)
-        
+
         # 是否启用自我进化（默认启用）
         self.enable_self_evolution = config.get('enable_self_evolution', True)
 
@@ -149,6 +149,9 @@ class LoopEngine:
         self.is_running = False
         self.is_paused = False
         self.current_task: Optional[Task] = None
+
+        # 🔥 已完成的任务ID集合（用于恢复执行时跳过）
+        self.completed_task_ids: set = set()
 
         # Approval mode settings (enabled by default to allow user review)
         self.approval_mode = config.get('approval_mode', True)  # Default to require approval
@@ -171,6 +174,7 @@ class LoopEngine:
         self._on_task_fail: Optional[Callable] = None
         self._on_progress: Optional[Callable] = None
         self._on_task_approval_needed: Optional[Callable] = None
+        self._on_step_progress: Optional[Callable] = None  # 🔥 新增：步骤级进度回调
 
         logger.info(f"LoopEngine initialized for session {session_id}")
 
@@ -181,6 +185,7 @@ class LoopEngine:
         on_task_fail: Optional[Callable] = None,
         on_progress: Optional[Callable] = None,
         on_task_approval_needed: Optional[Callable] = None,
+        on_step_progress: Optional[Callable] = None,  # 🔥 新增
     ) -> None:
         """Set event callbacks for execution monitoring"""
         self._on_task_start = on_task_start
@@ -188,11 +193,13 @@ class LoopEngine:
         self._on_task_fail = on_task_fail
         self._on_progress = on_progress
         self._on_task_approval_needed = on_task_approval_needed
+        self._on_step_progress = on_step_progress  # 🔥 新增
 
     async def run(
         self,
         goal: Dict[str, Any],
         chapter_count: Optional[int] = None,
+        completed_task_ids: Optional[List[str]] = None,
     ) -> ExecutionResult:
         """
         Main execution loop
@@ -200,6 +207,7 @@ class LoopEngine:
         Args:
             goal: Creation goal with style, theme, length, etc.
             chapter_count: Number of chapters to create
+            completed_task_ids: List of already completed task IDs to skip
 
         Returns:
             ExecutionResult with outputs and statistics
@@ -210,6 +218,11 @@ class LoopEngine:
         self.status = ExecutionStatus.RUNNING
         self.is_running = True
         self.stats = ExecutionStats()
+
+        # 🔥 记录已完成的任务ID
+        self.completed_task_ids = set(completed_task_ids or [])
+        if self.completed_task_ids:
+            logger.info(f"⏭️ Skipping {len(self.completed_task_ids)} already completed tasks")
 
         logger.info(f"Starting execution for session {self.session_id}")
         logger.info(f"Goal: {goal.get('title', 'Untitled')}")
@@ -224,11 +237,24 @@ class LoopEngine:
                 chapter_count=chapter_count,
             )
 
-            self.stats.total_tasks = len(tasks)
-            logger.info(f"Generated {len(tasks)} tasks")
+            # 🔥 过滤掉已完成的任务
+            if self.completed_task_ids:
+                tasks = [t for t in tasks if t.task_id not in self.completed_task_ids]
+                logger.info(f"🔍 Filtered to {len(tasks)} remaining tasks (after skipping completed)")
+
+            self.stats.total_tasks = len(tasks) + len(self.completed_task_ids)
+            logger.info(f"Generated {len(tasks)} tasks to execute")
 
             # Phase 2: Execute tasks
             self.status = ExecutionStatus.RUNNING
+
+            # 🔥 初始化 completed_tasks 计数（包括之前已完成的任务）
+            self.stats.completed_tasks = len(self.completed_task_ids)
+            if self.completed_task_ids:
+                logger.info(f"📊 Initial progress: {self.stats.completed_tasks}/{self.stats.total_tasks} tasks already completed")
+                # 通知前端初始进度
+                if self._on_progress:
+                    self._on_progress(self.stats.to_dict())
 
             while self.is_running:
                 # Check for pause
@@ -313,7 +339,7 @@ class LoopEngine:
         start_time = datetime.utcnow()
         task.started_at = start_time.isoformat()
         task.metadata["started_at"] = task.started_at
-        
+
         # 🔥 初始化 token 和费用统计
         task_total_tokens = 0
         task_prompt_tokens = 0
@@ -331,16 +357,54 @@ class LoopEngine:
 
         try:
             # 1. Get context from memory
+            await self._send_step_progress(
+                step="context_retrieval",
+                message=f"🔍 正在检索相关上下文...",
+                task_id=task.task_id,
+                task_type=task.task_type.value
+            )
             context = await self.memory.get_context(
                 task_id=task.task_id,
                 task_type=task.task_type.value,
                 chapter_index=task.metadata.get("chapter_index"),
             )
 
+            # 🔥 发送上下文检索完成事件
+            context_types = list(set(r.get("task_type", "unknown") for r in context.recent_results[:5]))
+            await self._send_step_progress(
+                step="context_retrieval_complete",
+                message=f"✅ 上下文检索完成 (检索到 {len(context.recent_results)} 条相关内容)",
+                task_id=task.task_id,
+                task_type=task.task_type.value,
+                context_count=len(context.recent_results),
+                context_types=context_types
+            )
+
             # 2. Build prompt for the task
+            await self._send_step_progress(
+                step="building_prompt",
+                message=f"📝 正在构建提示词...",
+                task_id=task.task_id,
+                task_type=task.task_type.value
+            )
             prompt = await self._build_prompt(task, context, goal)
 
             # 3. Call LLM to generate content
+            provider_name = {
+                "qwen": "阿里云 Qwen",
+                "deepseek": "DeepSeek",
+                "ark": "字节跳动 Doubao"
+            }.get(selected_provider.value, selected_provider.value)
+
+            await self._send_step_progress(
+                step="llm_call_start",
+                message=f"🤖 正在调用 {provider_name} 生成内容...",
+                task_id=task.task_id,
+                task_type=task.task_type.value,
+                llm_provider=selected_provider.value,
+                llm_model="未知"
+            )
+
             response = await self.llm_client.generate(
                 prompt=prompt,
                 task_type=task.task_type.value,
@@ -354,30 +418,132 @@ class LoopEngine:
 
             self.stats.llm_calls += 1
             self.stats.tokens_used += response.usage.total_tokens
-            
+
             # 🔥 累计 token 和费用
             task_total_tokens += response.usage.total_tokens
             task_prompt_tokens += response.usage.prompt_tokens
             task_completion_tokens += response.usage.completion_tokens
             task_cost += self._calculate_cost(response.provider.value, response.model, response.usage)
 
-            # 4. Evaluate quality
-            evaluation = await self.evaluator.evaluate(
+            # 🔥 发送 LLM 调用完成事件
+            await self._send_step_progress(
+                step="llm_call_complete",
+                message=f"✅ 内容生成完成 (使用 {response.usage.total_tokens} tokens)",
+                task_id=task.task_id,
                 task_type=task.task_type.value,
-                content=response.content,
-                context=context.to_dict(),
-                goal=goal,
+                llm_provider=response.provider.value,
+                llm_model=response.model,
+                tokens_used=response.usage.total_tokens,
+                content_length=len(response.content)
             )
 
+            # 4. Evaluate quality
+            # 🔥 创意脑暴不需要质量评估（前期创意阶段，可以天马行空）
+            # 故事核心需要质量评估，但不需要一致性检查
+            skip_evaluation = task.task_type.value == "创意脑暴"
+
+            if skip_evaluation:
+                # 创建默认通过的评估结果
+                from creative_autogpt.core.evaluator import EvaluationResult
+                evaluation = EvaluationResult(
+                    passed=True,
+                    score=1.0,
+                    quality_score=1.0,
+                    consistency_score=1.0,
+                    reasons=[f"{task.task_type.value}是创意阶段，无需质量评估"],
+                    suggestions=[],
+                    quality_issues=[],
+                    consistency_issues=[],
+                    evaluator="skipped",
+                    metadata={"task_type": task.task_type.value, "skipped_reason": "creative_brainstorm"}
+                )
+                quality_score = 1.0
+                consistency_score = 1.0
+
+                await self._send_step_progress(
+                    step="evaluation_skipped",
+                    message=f"⏭️ {task.task_type.value}属于创意阶段，跳过质量评估（可以天马行空）",
+                    task_id=task.task_id,
+                    task_type=task.task_type.value
+                )
+            else:
+                await self._send_step_progress(
+                    step="evaluation_start",
+                    message=f"📊 正在评估内容质量...",
+                    task_id=task.task_id,
+                    task_type=task.task_type.value
+                )
+
+                evaluation = await self.evaluator.evaluate(
+                    task_type=task.task_type.value,
+                    content=response.content,
+                    context=context.to_dict(),
+                    goal=goal,
+                )
+
+                # 🔥 获取质量评分和一致性评分
+                quality_score = getattr(evaluation, "quality_score", evaluation.score)
+                consistency_score = getattr(evaluation, "consistency_score", evaluation.score)
+
+                # 🔥 发送评估完成事件
+                await self._send_step_progress(
+                    step="evaluation_complete",
+                    message=f"📊 评估完成: 质量评分 {quality_score*10:.1f}/10, 一致性评分 {consistency_score*10:.1f}/10",
+                    task_id=task.task_id,
+                    task_type=task.task_type.value,
+                    quality_score=quality_score,
+                    consistency_score=consistency_score,
+                    passed=evaluation.passed
+                )
+
             # 4.5 总览检查：确保任务输出与前面任务保持一致
-            consistency_check = await self._check_task_consistency(
-                task=task,
-                content=response.content,
-                context=context,
-                goal=goal,
-            )
-            
-            if not consistency_check.get("passed", True):
+            # 🔥 只有创意脑暴不需要一致性检查（天马行空阶段，无需检查）
+            # 故事核心需要一致性检查（确保符合脑暴的内容）
+            skip_consistency_check = task.task_type.value == "创意脑暴"
+
+            if skip_consistency_check:
+                consistency_check = {"passed": True, "issues": [], "suggestions": []}
+                await self._send_step_progress(
+                    step="consistency_check_skipped",
+                    message=f"⏭️ 创意脑暴阶段，跳过一致性检查（可以天马行空）",
+                    task_id=task.task_id,
+                    task_type=task.task_type.value
+                )
+            else:
+                await self._send_step_progress(
+                    step="consistency_check_start",
+                    message=f"🔍 正在检查逻辑一致性...",
+                    task_id=task.task_id,
+                    task_type=task.task_type.value
+                )
+
+                consistency_check = await self._check_task_consistency(
+                    task=task,
+                    content=response.content,
+                    context=context,
+                    goal=goal,
+                )
+
+                # 🔥 发送一致性检查完成事件
+                if consistency_check.get("passed", True):
+                    await self._send_step_progress(
+                        step="consistency_check_complete",
+                        message=f"✅ 一致性检查通过",
+                        task_id=task.task_id,
+                        task_type=task.task_type.value,
+                        consistency_passed=True
+                    )
+                else:
+                    await self._send_step_progress(
+                        step="consistency_check_complete",
+                        message=f"⚠️ 一致性检查未通过 (发现 {len(consistency_check.get('issues', []))} 个问题)",
+                        task_id=task.task_id,
+                        task_type=task.task_type.value,
+                        consistency_passed=False,
+                        consistency_issues=consistency_check.get('issues', [])[:3]
+                    )
+
+            if not skip_consistency_check and not consistency_check.get("passed", True):
                 logger.warning(
                     f"Task {task.task_id} failed consistency check: {consistency_check.get('issues', [])}"
                 )
@@ -385,20 +551,20 @@ class LoopEngine:
                 issues = consistency_check.get('issues', [])
                 suggestions = consistency_check.get('suggestions', [])
                 continuity_issues = consistency_check.get('continuity_issues', [])
-                
+
                 # 🔥 将完整的一致性检查结果存储到任务元数据中，供重写时使用
                 task.metadata["consistency_check_result"] = consistency_check
-                
+
                 # 添加到评估原因（区分一致性问题和连贯性问题）
                 if issues:
                     evaluation.reasons.append(f"【一致性问题】{chr(10).join(issues)}")
                 if continuity_issues:
                     evaluation.reasons.append(f"【章节连贯性问题】{chr(10).join(continuity_issues)}")
-                
+
                 # 添加建议
                 if suggestions:
                     evaluation.suggestions.extend(suggestions)
-                
+
                 evaluation.passed = False
 
             # 5. Handle evaluation result
@@ -407,6 +573,26 @@ class LoopEngine:
                 logger.warning(
                     f"Task {task.task_id} failed evaluation (score: {evaluation.score:.3f})"
                 )
+
+                # 🔥 发送开始重写事件
+                quality_score = getattr(evaluation, "quality_score", evaluation.score)
+                consistency_score = getattr(evaluation, "consistency_score", evaluation.score)
+                failed_reasons = []
+                if quality_score < 0.8:
+                    failed_reasons.append(f"质量评分 {quality_score*10:.1f}/10 (需要 >= 8.0)")
+                if consistency_score < 0.8:
+                    failed_reasons.append(f"一致性评分 {consistency_score*10:.1f}/10 (需要 >= 8.0)")
+
+                await self._send_step_progress(
+                    step="rewrite_start",
+                    message=f"🔄 开始重写 (原因: {', '.join(failed_reasons)})",
+                    task_id=task.task_id,
+                    task_type=task.task_type.value,
+                    rewrite_attempt=1,
+                    quality_score=quality_score,
+                    consistency_score=consistency_score
+                )
+
                 # 🔥 传递当前的 token 统计用于累计
                 rewrite_token_stats = {
                     "total_tokens": task_total_tokens,
@@ -414,19 +600,54 @@ class LoopEngine:
                     "completion_tokens": task_completion_tokens,
                     "cost": task_cost,
                 }
-                final_content, rewrite_token_stats = await self._attempt_rewrite(
-                    task=task,
-                    content=response.content,
-                    evaluation=evaluation,
-                    context=context,
-                    goal=goal,
-                    token_stats=rewrite_token_stats,
-                )
-                # 🔥 更新统计
-                task_total_tokens = rewrite_token_stats["total_tokens"]
-                task_prompt_tokens = rewrite_token_stats["prompt_tokens"]
-                task_completion_tokens = rewrite_token_stats["completion_tokens"]
-                task_cost = rewrite_token_stats["cost"]
+
+                # 🔥 添加 try-catch 处理重写失败
+                try:
+                    final_content, rewrite_token_stats = await self._attempt_rewrite(
+                        task=task,
+                        content=response.content,
+                        evaluation=evaluation,
+                        context=context,
+                        goal=goal,
+                        token_stats=rewrite_token_stats,
+                    )
+                    # 🔥 更新统计（重写成功）
+                    task_total_tokens = rewrite_token_stats["total_tokens"]
+                    task_prompt_tokens = rewrite_token_stats["prompt_tokens"]
+                    task_completion_tokens = rewrite_token_stats["completion_tokens"]
+                    task_cost = rewrite_token_stats["cost"]
+                except Exception as rewrite_error:
+                    # 🔥 重写失败，标记任务为失败并返回
+                    logger.error(f"❌ 任务 {task.task_id} 重写失败: {rewrite_error}")
+
+                    task.status = "failed"
+                    task.error = str(rewrite_error)
+                    self.planner.update_task_status(task.task_id, "failed")
+                    self.stats.failed_tasks += 1
+
+                    # 🔥 发送任务失败事件
+                    await self._send_step_progress(
+                        step="task_failed",
+                        message=f"❌ {task.task_type.value} 任务失败: {str(rewrite_error)[:100]}",
+                        task_id=task.task_id,
+                        task_type=task.task_type.value,
+                        error=str(rewrite_error)
+                    )
+
+                    # 🔥 仍然存储到内存（标记为失败），但返回不继续
+                    memory_type = self._get_memory_type_for_task(task.task_type)
+                    await self.memory.store(
+                        content=response.content,  # 存储原始内容
+                        task_id=task.task_id,
+                        task_type=task.task_type.value,
+                        memory_type=memory_type,
+                        metadata=task.metadata,
+                        chapter_index=task.metadata.get("chapter_index"),
+                        evaluation=evaluation.to_dict(),
+                    )
+
+                    # 🔥 返回，不继续执行
+                    return
 
             # 6. Store in memory
             memory_type = self._get_memory_type_for_task(task.task_type)
@@ -908,36 +1129,34 @@ class LoopEngine:
             前置任务内容的字典，key 是任务类型，value 是任务输出内容
         """
         # 定义每个任务需要的前置任务（布兰登·桑德森式流程）
-        # 流程：创意脑暴 → 故事核心 → 大纲 → 世界观规则 → 人物设计 → 主题确认/风格元素 → 市场定位 → 事件 → 场景物品冲突 → 伏笔列表 → 一致性检查
+        # 流程：创意脑暴 → 故事核心 → 大纲 → 世界观规则 → 人物设计 → 主题确认/风格元素 → 市场定位 → 事件 → 场景物品冲突 → 伏笔列表 → 章节创作
+        # 注：一致性检查已合并到综合评估任务中，不再单独列出
         task_dependencies = {
             # Phase 0: 创意脑暴阶段
             "创意脑暴": [],  # 第一个任务，无依赖
             "故事核心": ["创意脑暴"],  # 必须基于脑暴结果
-            
+
             # Phase 1: 大纲设计（结构优先！）
             "大纲": ["故事核心"],  # 🔥 大纲紧跟故事核心，先搭骨架
-            
+
             # Phase 2: 世界观规则（在人物之前！）
             # 布兰登·桑德森的方法：先建立世界规则，人物才能在规则内行动
             "世界观规则": ["故事核心", "大纲"],  # 世界观服务于大纲
-            
+
             # Phase 3: 人物设计（基于大纲和世界观）
             "人物设计": ["故事核心", "大纲", "世界观规则"],  # 人物在世界规则内完成大纲
-            
+
             # Phase 4: 主题与风格（从故事中提炼）
             "主题确认": ["故事核心", "大纲", "世界观规则", "人物设计"],  # 主题从人物选择中涌现
             "风格元素": ["故事核心", "大纲", "世界观规则", "人物设计"],  # 风格服务于故事
             "市场定位": ["故事核心", "大纲", "人物设计", "风格元素"],  # 综合所有元素
-            
+
             # Phase 5: 细节填充（为大纲添加血肉）
             "事件": ["故事核心", "大纲", "世界观规则", "人物设计", "市场定位"],
             "场景物品冲突": ["故事核心", "大纲", "世界观规则", "人物设计", "事件"],
             "伏笔列表": ["故事核心", "大纲", "人物设计", "事件", "场景物品冲突"],
-            
-            # Phase 6: 一致性检查
-            "一致性检查": ["故事核心", "大纲", "世界观规则", "人物设计", "事件", "场景物品冲突", "伏笔列表"],
-            
-            # Phase 7: 章节创作 - 🔴 必须包含所有基础设定 + 风格元素！
+
+            # Phase 6: 章节创作 - 🔴 必须包含所有基础设定 + 风格元素！
             # 基础设定 = 故事核心 + 大纲 + 世界观规则 + 人物设计 + 事件 + 场景物品冲突 + 伏笔列表
             # 上一章内容通过 _get_previous_chapters() 单独获取
             "章节大纲": ["故事核心", "大纲", "世界观规则", "人物设计", "风格元素", "事件", "场景物品冲突", "伏笔列表"],
@@ -3436,13 +3655,18 @@ class LoopEngine:
 
 ## 三、三幕结构总览
 
+⚠️ **请为每一幕列出所有章节的详细规划！**
+
 ### 第一幕：建立与进入（第1-{max(1, chapter_count//5)}章，约占20%）
+
+**目标**：建立世界、人物、日常，然后打破日常
 
 | 章节 | 功能 | 一句话描述 |
 |-----|------|----------|
 | 第1章 | 日常展示 | |
-| 第X章 | 触发事件 | |
-| 第X章 | 跨越门槛 | |
+| 第2章 | 触发事件 | |
+| ... | ... | |
+| 第{max(1, chapter_count//5)}章 | 跨越门槛 | |
 
 **第一幕要完成**：
 - 读者了解主角是谁
@@ -3451,13 +3675,17 @@ class LoopEngine:
 
 ### 第二幕：对抗与发展（第{max(2, chapter_count//5+1)}-{max(3, int(chapter_count*0.8))}章，约占60%）
 
+**目标**：冲突升级，人物成长，困难加剧
+
 | 章节 | 功能 | 一句话描述 |
 |-----|------|----------|
-| 第X章 | 第一考验 | |
-| 第X章 | 小胜利 | |
+| 第{max(2, chapter_count//5+1)}章 | 第一考验 | |
+| 第...章 | 小胜利 | |
 | 第{chapter_count//2}章 | **中点反转** | |
-| 第X章 | 困境加深 | |
+| 第...章 | 困境加深 | |
 | 第{int(chapter_count*0.75)}章 | **黑暗时刻** | |
+| ... | ... | |
+| 第{max(3, int(chapter_count*0.8))}章 | ... | |
 
 **第二幕要完成**：
 - 冲突不断升级
@@ -3466,10 +3694,12 @@ class LoopEngine:
 
 ### 第三幕：高潮与结局（第{max(4, int(chapter_count*0.8)+1)}-{chapter_count}章，约占20%）
 
+**目标**：最终对决和故事收尾
+
 | 章节 | 功能 | 一句话描述 |
 |-----|------|----------|
-| 第X章 | 觉醒/准备 | |
-| 第X章 | 最终对决 | |
+| 第{max(4, int(chapter_count*0.8)+1)}章 | 觉醒/准备 | |
+| 第...章 | 最终对决 | |
 | 第{chapter_count}章 | 结局 | |
 
 **第三幕要完成**：
@@ -3513,20 +3743,32 @@ class LoopEngine:
 
 ---
 
-### 第2章：[章节标题]
-[同上格式...]
+⚠️ **重要：必须按照上述格式，规划全部 {chapter_count} 章！**
 
-### 第3章：[章节标题]
-[继续...]
+请继续为**第2章到第{chapter_count}章**每章都按照上述格式详细规划：
 
-...
+- 第2章：[章节标题]
+- 第3章：[章节标题]
+- ...
+- 第{chapter_count}章：[章节标题]
 
-### 第{chapter_count}章：[章节标题]
-[最后一章]
+每一章都必须包含：
+| 项目 | 内容 |
+|-----|------|
+| 叙事功能 | |
+| 情绪曲线 | |
+| 章节概要 | |
+| 出场人物 | |
+| 场景 | |
+| 关键事件 | |
+| 伏笔操作 | |
+| 章节结尾钩子 | |
+
+**请务必输出全部 {chapter_count} 章的详细规划，不要省略任何章节！**
 
 ---
 
-## 四、人物出场规划
+## 五、人物出场规划
 
 | 人物 | 首次出场 | 重要章节 | 关键变化 |
 |-----|---------|---------|---------|
@@ -4109,13 +4351,15 @@ class LoopEngine:
             task_section = f"""
 ## 当前任务：{task_type} 📊
 
-你是一位资深的文学评论家和编辑，正在对创作内容进行**专业评估**。
+你是一位资深的文学评论家和编辑，正在对创作内容进行**综合质量评估**（同时评估文学质量和逻辑一致性）。
 
-> "好的编辑不只是挑毛病，而是帮助作品成为它本该成为的样子。" — 罗伯特·戈特利布
+> "好的编辑不只关注文字优美，更要确保逻辑自洽。" — 罗伯特·戈特利布
 
 ---
 
 ### 📌 评估维度
+
+**第一部分：文学质量评分**
 
 | 维度 | 评分 | 说明 |
 |-----|-----|------|
@@ -4126,11 +4370,19 @@ class LoopEngine:
 | **完整性** | X/10 | 结构是否完整？有无遗漏？ |
 | **创意性** | X/10 | 有无新意？是否有独特之处？ |
 
+**第二部分：逻辑一致性检查**
+
+| 维度 | 评分 | 说明 |
+|-----|-----|------|
+| **人物一致性** | X/10 | 性格、外貌、背景、关系是否前后矛盾？ |
+| **世界观一致性** | X/10 | 规则、时间线、空间、能力体系是否自洽？ |
+| **情节一致性** | X/10 | 伏笔、因果关系、逻辑是否有问题？ |
+
 ---
 
-### 📋 请输出以下内容
+### 📋 请按以下格式输出
 
-**一、各维度详细评分**
+**一、文学质量评分**
 
 | 维度 | 评分 | 优点 | 不足 |
 |-----|-----|-----|-----|
@@ -4141,22 +4393,43 @@ class LoopEngine:
 | 完整性 | /10 | | |
 | 创意性 | /10 | | |
 
-**二、亮点总结**（3-5条）
-- 
+**二、逻辑一致性检查**
 
-**三、待改进**（3-5条）
-- 
+🔴 **严重问题**（必须修复）：
+- 问题1：[位置] - [具体问题] - [修改建议]
+- ...
 
-**四、修改建议**（按优先级）
-1. 🔴 必须改：
-2. 🟡 建议改：
-3. 🟢 可以改：
+🟡 **中等问题**（建议修复）：
+- 问题1：[位置] - [具体问题] - [修改建议]
+- ...
+
+🟢 **轻微问题**（可选修复）：
+- 问题1：[位置] - [具体问题] - [修改建议]
+- ...
+
+✅ 如果未发现明显问题，请写"未发现明显逻辑问题"
+
+**三、问题清单汇总**（按优先级排序）
+
+| 优先级 | 类型 | 位置 | 问题描述 | 建议 |
+|-------|------|-----|---------|-----|
+| 🔴P0 | [质量/一致性] | 第X章/全局 | | |
+| 🟡P1 | [质量/一致性] | 第X章/全局 | | |
+| 🟢P2 | [质量/一致性] | 第X章/全局 | | |
+
+**四、亮点总结**（3-5条）
+-
 
 **五、总体评价**
-- 综合评分：X/10
+- 综合质量评分：X/10
+- 一致性评分：X/10
 - 一句话评价：
 
-⚠️ 这是评估报告，请客观专业。不要输出小说内容。
+⚠️ **重要提醒**：
+- 这是**评估报告**，请客观专业
+- 质量问题和逻辑问题都要关注
+- 不要输出小说内容或情节，只输出评估报告
+- 如果内容很完美，也要如实给出高分评价
 """
         elif task_type == "修订":
             task_section = f"""
@@ -4238,10 +4511,26 @@ class LoopEngine:
         elif task_type == "大纲":
             sections.append("""
 ## 输出要求
-- 完整输出故事大纲
-- 章节规划要覆盖所有章节
-- 用叙事性的语言，让大纲本身也有可读性
-- 不要输出标题或额外说明，直接输出大纲内容
+
+⚠️ **最关键的输出要求**：
+
+1. **必须规划全部 {chapter_count} 章**，从第1章到第{chapter_count}章，一章都不能少！
+
+2. **每一幕都要有完整的章节列表**：
+   - 第一幕：第1章到第X章
+   - 第二幕：第X+1章到第Y章
+   - 第三幕：第Y+1章到第{chapter_count}章
+
+3. **详细章节规划必须覆盖每一章**，不要用"..."省略
+
+4. **输出格式要清晰**，使用表格和标题来组织内容
+
+5. **不要输出标题或额外说明**，直接从"一、故事完整概览"开始输出
+
+⚠️ 如果内容太长被截断，请优先确保：
+- ✅ 三幕结构完整（每一幕的所有章节都列出）
+- ✅ 详细章节规划至少覆盖前10章
+- ✅ 人物列表完整
 """)
         else:
             # Content generation tasks
@@ -4292,15 +4581,21 @@ class LoopEngine:
         evaluation: EvaluationResult,
         context: MemoryContext,
         goal: Dict[str, Any],
-        max_retries: int = 999,  # 不限制次数，直到通过为止
+        max_retries: int = 3,  # 🔥 修改为3次重试，避免无限循环
         token_stats: Dict[str, int] = None,  # 🔥 用于累计 token 统计
     ) -> tuple:
         """
         Attempt to rewrite content based on evaluation feedback until it passes
-        
+
+        Args:
+            max_retries: 最大重试次数，超过后抛出异常
+
         Returns:
             tuple: (final_content, token_stats_dict)
             token_stats_dict 包含: total_tokens, prompt_tokens, completion_tokens, cost
+
+        Raises:
+            Exception: 重试次数用完后仍未通过评估
         """
 
         logger.info(f"🔄 开始重写任务 {task.task_id}，直到评估通过为止")
@@ -4326,6 +4621,19 @@ class LoopEngine:
                 task.metadata["retry_reason"] = f"评估未通过 (得分: {current_evaluation.score:.2f})"
                 await self._safe_callback(self._on_task_start, task)
 
+            # 🔥 发送重写进度
+            quality_score = getattr(current_evaluation, "quality_score", current_evaluation.score)
+            consistency_score = getattr(current_evaluation, "consistency_score", current_evaluation.score)
+            await self._send_step_progress(
+                step="rewrite_attempt",
+                message=f"🔄 正在进行第 {attempt} 次重写...",
+                task_id=task.task_id,
+                task_type=task.task_type.value,
+                rewrite_attempt=attempt,
+                quality_score=quality_score,
+                consistency_score=consistency_score
+            )
+
             # Build improved prompt with feedback
             # 🔥 传递一致性检查结果
             feedback_prompt = self._build_rewrite_prompt(
@@ -4339,13 +4647,22 @@ class LoopEngine:
             )
 
             try:
+                # 🔥 发送 LLM 重写调用事件
+                await self._send_step_progress(
+                    step="rewrite_llm_call",
+                    message=f"🤖 正在调用 LLM 进行第 {attempt} 次重写...",
+                    task_id=task.task_id,
+                    task_type=task.task_type.value,
+                    rewrite_attempt=attempt
+                )
+
                 response = await self.llm_client.generate(
                     prompt=feedback_prompt,
                     task_type=task.task_type.value,
                     temperature=min(0.7 + attempt * 0.05, 1.0),  # 逐渐提高温度增加变化
                     max_tokens=self._get_max_tokens_for_task(task.task_type),
                 )
-                
+
                 # 🔥 累计重写过程中的 token 消耗
                 token_stats["total_tokens"] += response.usage.total_tokens
                 token_stats["prompt_tokens"] += response.usage.prompt_tokens
@@ -4355,6 +4672,14 @@ class LoopEngine:
                 )
 
                 # Re-evaluate
+                await self._send_step_progress(
+                    step="rewrite_evaluation",
+                    message=f"📊 正在评估第 {attempt} 次重写结果...",
+                    task_id=task.task_id,
+                    task_type=task.task_type.value,
+                    rewrite_attempt=attempt
+                )
+
                 new_evaluation = await self.evaluator.evaluate(
                     task_type=task.task_type.value,
                     content=response.content,
@@ -4362,23 +4687,52 @@ class LoopEngine:
                     goal=goal,
                 )
 
+                # 🔥 获取新的评分
+                new_quality_score = getattr(new_evaluation, "quality_score", new_evaluation.score)
+                new_consistency_score = getattr(new_evaluation, "consistency_score", new_evaluation.score)
+
                 if new_evaluation.passed:
                     logger.info(f"✅ 重写成功！尝试 #{attempt}，得分: {new_evaluation.score:.2f}")
                     self.stats.retried_tasks += 1
                     task.metadata["final_retry_count"] = attempt
+
+                    # 🔥 发送重写成功事件
+                    await self._send_step_progress(
+                        step="rewrite_success",
+                        message=f"✅ 重写成功！第 {attempt} 次重写通过评估",
+                        task_id=task.task_id,
+                        task_type=task.task_type.value,
+                        rewrite_attempt=attempt,
+                        quality_score=new_quality_score,
+                        consistency_score=new_consistency_score
+                    )
+
                     return response.content, token_stats
 
                 # Update for next retry
                 current_content = response.content
                 current_evaluation = new_evaluation
-                
+
                 # 🔥 记录失败尝试次数
                 task.failed_attempts += 1
-                
+
+                # 🔥 发送重写未通过事件
+                await self._send_step_progress(
+                    step="rewrite_failed",
+                    message=f"⚠️ 第 {attempt} 次重写未通过 (质量: {new_quality_score*10:.1f}/10, 一致性: {new_consistency_score*10:.1f}/10)，继续重试...",
+                    task_id=task.task_id,
+                    task_type=task.task_type.value,
+                    rewrite_attempt=attempt,
+                    quality_score=new_quality_score,
+                    consistency_score=new_consistency_score,
+                    quality_issues=getattr(new_evaluation, "quality_issues", [])[:2],
+                    consistency_issues=getattr(new_evaluation, "consistency_issues", [])[:2]
+                )
+
                 logger.warning(
                     f"⚠️ 尝试 #{attempt} 未通过评估，得分: {new_evaluation.score:.2f}，继续重试..."
                 )
-                
+
                 # 每5次重试暂停一下，避免过快请求
                 if attempt % 5 == 0:
                     logger.info(f"⏸️ 已重试 {attempt} 次，暂停2秒后继续...")
@@ -4387,14 +4741,43 @@ class LoopEngine:
             except Exception as e:
                 logger.error(f"❌ 重写尝试 #{attempt} 失败: {e}")
                 task.failed_attempts += 1
+
+                # 🔥 发送重写错误事件
+                await self._send_step_progress(
+                    step="rewrite_error",
+                    message=f"❌ 第 {attempt} 次重写出错: {str(e)[:50]}，正在重试...",
+                    task_id=task.task_id,
+                    task_type=task.task_type.value,
+                    rewrite_attempt=attempt,
+                    error=str(e)
+                )
+
                 # 出错后等待一下再重试
                 await asyncio.sleep(1)
                 continue
 
-        # 理论上不应该到达这里（max_retries=999）
-        logger.warning(f"⚠️ 任务 {task.task_id} 达到最大重试次数 {max_retries}")
-        task.metadata["final_retry_count"] = attempt
-        return current_content, token_stats
+        # 🔥 达到最大重试次数，抛出异常而不是返回未通过的内容
+        error_msg = (
+            f"❌ 任务 {task.task_id} ({task.task_type.value}) "
+            f"在 {max_retries} 次重写后仍未通过评估\n"
+            f"最终得分: 质量 {quality_score*10:.1f}/10, 一致性 {consistency_score*10:.1f}/10\n"
+            f"主要原因: {current_evaluation.reasons[:3] if current_evaluation.reasons else '未知'}"
+        )
+        logger.error(error_msg)
+
+        # 🔥 发送任务失败事件
+        await self._send_step_progress(
+            step="task_failed",
+            message=f"❌ {task.task_type.value} 重写 {max_retries} 次后仍未通过，任务失败",
+            task_id=task.task_id,
+            task_type=task.task_type.value,
+            quality_score=quality_score,
+            consistency_score=consistency_score,
+            error=error_msg
+        )
+
+        # 🔥 抛出异常，让任务执行器知道失败了
+        raise Exception(error_msg)
 
     def _build_rewrite_prompt(
         self,
@@ -4407,10 +4790,16 @@ class LoopEngine:
         consistency_result: Dict[str, Any] = None,  # 🔥 新增参数
     ) -> str:
         """Build prompt for content rewriting with retry information and consistency feedback"""
-        
+
         task_type = task.task_type.value
         chapter_index = task.metadata.get("chapter_index", None)
-        
+
+        # 🔥 新增：获取分别的质量评分和一致性评分
+        quality_score = getattr(evaluation, "quality_score", evaluation.score)
+        consistency_score = getattr(evaluation, "consistency_score", evaluation.score)
+        quality_issues = getattr(evaluation, "quality_issues", [])
+        consistency_issues = getattr(evaluation, "consistency_issues", [])
+
         # 根据重试次数调整提示强度
         urgency = ""
         if attempt >= 3:
@@ -4434,7 +4823,7 @@ class LoopEngine:
             suggestions = consistency_result.get("suggestions", [])
             continuity_issues = consistency_result.get("continuity_issues", [])
             score = consistency_result.get("score", 0)
-            
+
             consistency_section = f"""
 ## 🚨 一致性检查失败（必须修复！）
 
@@ -4446,7 +4835,7 @@ class LoopEngine:
 {chr(10).join(f'- {issue}' for issue in issues)}
 
 """
-            
+
             if continuity_issues:
                 consistency_section += f"""### ❌ 章节连贯性问题（非常重要！）
 {chr(10).join(f'- {issue}' for issue in continuity_issues)}
@@ -4459,10 +4848,36 @@ class LoopEngine:
 4. 情节有承接关系
 
 """
-            
+
             if suggestions:
                 consistency_section += f"""### 💡 修改建议
 {chr(10).join(f'- {s}' for s in suggestions)}
+
+"""
+
+        # 🔥 新增：构建质量问题部分
+        quality_section = ""
+        if quality_issues and quality_score < 0.8:
+            quality_section = f"""
+## 📝 文学质量问题（必须改进！）
+
+文学质量评分：{quality_score * 10:.1f}/10 (需要 >= 8.0)
+
+### ❌ 发现的质量问题：
+{chr(10).join(f'- {issue}' for issue in quality_issues[:5])}
+
+"""
+
+        # 🔥 新增：构建一致性问题部分（从评估结果中）
+        eval_consistency_section = ""
+        if consistency_issues and consistency_score < 0.8:
+            eval_consistency_section = f"""
+## 🔍 逻辑一致性问题（必须修复！）
+
+逻辑一致性评分：{consistency_score * 10:.1f}/10 (需要 >= 8.0)
+
+### ❌ 发现的一致性问题：
+{chr(10).join(f'- {issue}' for issue in consistency_issues[:5])}
 
 """
 
@@ -4475,28 +4890,43 @@ class LoopEngine:
 
 {consistency_section}
 
+{quality_section}
+
+{eval_consistency_section}
+
+## 📊 评估结果详情
+
+### 评分情况
+- 📈 文学质量评分：{quality_score * 10:.1f}/10 {'✅ 通过' if quality_score >= 0.8 else '❌ 未通过 (需要 >= 8.0)'}
+- 🔍 逻辑一致性评分：{consistency_score * 10:.1f}/10 {'✅ 通过' if consistency_score >= 0.8 else '❌ 未通过 (需要 >= 8.0)'}
+
+### 综合评估
+{chr(10).join(f'💡 {r}' for r in evaluation.reasons[:3])}
+
+### 改进建议
+{chr(10).join(f'- {s}' for s in evaluation.suggestions[:5])}
+
 ## 原始内容
 ```
 {original_content[:3000]}
+{"..." if len(original_content) > 3000 else ""}
 ```
 
-## 评估反馈
-总体评分: {evaluation.score:.2f}/1.00
-状态: {'未通过' if not evaluation.passed else '通过'}
+## 🎯 重写要求
 
-### 问题原因（必须解决）:
-{chr(10).join(f'❌ {r}' for r in evaluation.reasons[:5])}
+### 📌 通过标准（必须同时满足）
+1. ✅ 文学质量评分 >= 8.0/10
+2. ✅ 逻辑一致性评分 >= 8.0/10
 
-改进建议:
-{chr(10).join(f'- {s}' for s in evaluation.suggestions[:5])}
-
-## 重写要求
-请根据评估反馈改进内容，**必须解决所有一致性和连贯性问题**。
+### 📝 修改重点
+请根据评估反馈改进内容：
+- **质量问题**：{'请改进文学质量，包括故事性、人物塑造、文笔、可读性、完整性、创意性等' if quality_score < 0.8 else '文学质量已达标'}
+- **一致性问题**：{'请修复逻辑一致性问题，包括人物一致性、世界观一致性、情节一致性等' if consistency_score < 0.8 else '逻辑一致性已达标'}
 
 {"特别注意：确保本章开头与前一章结尾自然衔接，不要像另一个独立故事！" if chapter_index and chapter_index > 1 else ""}
 
 ## 输出要求
-请直接输出改进后的内容，不需要解释或说明。
+请直接输出改进后的完整内容，不需要解释或说明。
 """
 
         return prompt
@@ -4574,11 +5004,11 @@ class LoopEngine:
         }
 
         # Structured tasks need lower temperature
+        # 注：CONSISTENCY_CHECK 已合并到 EVALUATION
         low_temp_tasks = {
             NovelTaskType.OUTLINE,
             NovelTaskType.CHARACTER_DESIGN,
             NovelTaskType.WORLDVIEW_RULES,
-            NovelTaskType.CONSISTENCY_CHECK,
         }
 
         if task_type in high_temp_tasks:
@@ -4593,16 +5023,20 @@ class LoopEngine:
         # 章节内容需要最多 tokens
         if task_type == NovelTaskType.CHAPTER_CONTENT:
             return 16000  # 约 12000 字中文
-        
-        # 大纲和场景生成需要较多 tokens
-        elif task_type in {NovelTaskType.OUTLINE, NovelTaskType.SCENE_GENERATION, NovelTaskType.CHAPTER_OUTLINE}:
+
+        # 大纲需要最多 tokens，因为要规划所有章节
+        elif task_type == NovelTaskType.OUTLINE:
+            return 16000  # 约 12000 字中文，确保能输出所有章节
+
+        # 场景生成和章节大纲
+        elif task_type in {NovelTaskType.SCENE_GENERATION, NovelTaskType.CHAPTER_OUTLINE}:
             return 8000  # 约 6000 字中文
-        
+
         # 规划类任务需要足够空间
-        elif task_type in {NovelTaskType.CHARACTER_DESIGN, NovelTaskType.WORLDVIEW_RULES, 
+        elif task_type in {NovelTaskType.CHARACTER_DESIGN, NovelTaskType.WORLDVIEW_RULES,
                            NovelTaskType.EVENTS, NovelTaskType.SCENES_ITEMS_CONFLICTS, NovelTaskType.FORESHADOW_LIST}:
             return 8000  # 约 6000 字中文
-        
+
         # 其他任务
         else:
             return 4000  # 约 3000 字中文
@@ -4713,12 +5147,10 @@ class LoopEngine:
             # 元素创建阶段
             NovelTaskType.CHARACTER_DESIGN: MemoryType.CHARACTER,
             NovelTaskType.WORLDVIEW_RULES: MemoryType.WORLDVIEW,
-            
+
             # 风格定位阶段
-            NovelTaskType.THEME_CONFIRMATION: MemoryType.GENERAL,
             NovelTaskType.STYLE_ELEMENTS: MemoryType.GENERAL,
-            NovelTaskType.MARKET_POSITIONING: MemoryType.GENERAL,
-            
+
             # 情节阶段
             NovelTaskType.EVENTS: MemoryType.PLOT,
             NovelTaskType.SCENES_ITEMS_CONFLICTS: MemoryType.SCENE,
@@ -4726,8 +5158,9 @@ class LoopEngine:
             
             # 大纲阶段
             NovelTaskType.OUTLINE: MemoryType.OUTLINE,
-            NovelTaskType.CONSISTENCY_CHECK: MemoryType.GENERAL,
-            
+            # 注：CONSISTENCY_CHECK 已合并到 EVALUATION
+            # NovelTaskType.CONSISTENCY_CHECK: MemoryType.GENERAL,
+
             # 章节阶段
             NovelTaskType.CHAPTER_OUTLINE: MemoryType.CHAPTER,
             NovelTaskType.SCENE_GENERATION: MemoryType.SCENE,
@@ -4760,6 +5193,36 @@ class LoopEngine:
                 callback(*args)
         except Exception as e:
             logger.error(f"Callback error: {e}")
+
+    async def _send_step_progress(
+        self,
+        step: str,
+        message: str,
+        task_id: str = None,
+        task_type: str = None,
+        **extra_data
+    ) -> None:
+        """🔥 发送步骤级进度更新
+
+        Args:
+            step: 步骤名称 (context_retrieval, llm_call, evaluation, rewrite, etc.)
+            message: 进度消息
+            task_id: 当前任务ID
+            task_type: 当前任务类型
+            **extra_data: 额外数据 (llm_provider, model, score, retry_count, etc.)
+        """
+        if self._on_step_progress:
+            await self._safe_callback(
+                self._on_step_progress,
+                {
+                    "step": step,
+                    "message": message,
+                    "task_id": task_id,
+                    "task_type": task_type,
+                    "timestamp": datetime.utcnow().isoformat(),
+                    **extra_data
+                }
+            )
 
     # Control methods
 

@@ -53,16 +53,34 @@ export const TaskCard = ({
     }
 
     const { evaluation } = task;
-    const score = evaluation.score;
+    const { quality_score, consistency_score, score } = evaluation;
 
     return (
       <div className="mt-3 p-3 bg-gray-50 rounded-lg border">
-        <div className="flex items-center justify-between mb-2">
-          <span className="text-sm font-medium text-gray-700">质量评分</span>
-          <span className={`text-lg font-bold ${score >= 80 ? 'text-green-600' : score >= 60 ? 'text-yellow-600' : 'text-red-600'}`}>
-            {score}/100
-          </span>
-        </div>
+        {/* 🔥 分别显示质量和一致性评分 */}
+        {quality_score !== undefined && consistency_score !== undefined ? (
+          <div className="grid grid-cols-2 gap-2 mb-2">
+            <div className={`p-2 rounded border ${quality_score >= 0.8 ? 'bg-green-50 border-green-200' : quality_score >= 0.6 ? 'bg-yellow-50 border-yellow-200' : 'bg-red-50 border-red-200'}`}>
+              <p className="text-xs font-medium text-gray-700">📈 文学质量</p>
+              <p className={`text-lg font-bold ${quality_score >= 0.8 ? 'text-green-600' : quality_score >= 0.6 ? 'text-yellow-600' : 'text-red-600'}`}>
+                {(quality_score * 10).toFixed(1)}/10
+              </p>
+            </div>
+            <div className={`p-2 rounded border ${consistency_score >= 0.8 ? 'bg-green-50 border-green-200' : consistency_score >= 0.6 ? 'bg-yellow-50 border-yellow-200' : 'bg-red-50 border-red-200'}`}>
+              <p className="text-xs font-medium text-gray-700">🔍 逻辑一致性</p>
+              <p className={`text-lg font-bold ${consistency_score >= 0.8 ? 'text-green-600' : consistency_score >= 0.6 ? 'text-yellow-600' : 'text-red-600'}`}>
+                {(consistency_score * 10).toFixed(1)}/10
+              </p>
+            </div>
+          </div>
+        ) : (
+          <div className="flex items-center justify-between mb-2">
+            <span className="text-sm font-medium text-gray-700">质量评分</span>
+            <span className={`text-lg font-bold ${score >= 80 ? 'text-green-600' : score >= 60 ? 'text-yellow-600' : 'text-red-600'}`}>
+              {score}/100
+            </span>
+          </div>
+        )}
 
         {evaluation.reasons && evaluation.reasons.length > 0 && (
           <div className="mt-2">
@@ -86,6 +104,35 @@ export const TaskCard = ({
                 <li key={idx} className="flex items-start">
                   <span className="mr-1">→</span>
                   <span>{suggestion}</span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+
+        {/* 🔥 显示质量问题和一致性问题 */}
+        {evaluation.quality_issues && evaluation.quality_issues.length > 0 && (
+          <div className="mt-2">
+            <p className="text-xs font-medium text-gray-600 mb-1">质量问题:</p>
+            <ul className="text-xs text-red-600 space-y-1">
+              {evaluation.quality_issues.map((issue, idx) => (
+                <li key={idx} className="flex items-start">
+                  <span className="mr-1">•</span>
+                  <span>{issue}</span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+
+        {evaluation.consistency_issues && evaluation.consistency_issues.length > 0 && (
+          <div className="mt-2">
+            <p className="text-xs font-medium text-gray-600 mb-1">一致性问题:</p>
+            <ul className="text-xs text-orange-600 space-y-1">
+              {evaluation.consistency_issues.map((issue, idx) => (
+                <li key={idx} className="flex items-start">
+                  <span className="mr-1">•</span>
+                  <span>{issue}</span>
                 </li>
               ))}
             </ul>

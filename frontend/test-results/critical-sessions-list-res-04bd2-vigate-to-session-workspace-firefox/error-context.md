@@ -1,0 +1,55 @@
+# Page snapshot
+
+```yaml
+- generic [ref=e3]:
+  - banner [ref=e4]:
+    - generic [ref=e6]:
+      - link "C Creative AutoGPT AI 驱动的创意写作" [ref=e7] [cursor=pointer]:
+        - /url: /
+        - generic [ref=e9]: C
+        - generic [ref=e11]:
+          - generic [ref=e12]: Creative AutoGPT
+          - generic [ref=e13]: AI 驱动的创意写作
+      - navigation [ref=e14]:
+        - link "首页" [ref=e15] [cursor=pointer]:
+          - /url: /
+        - link "创建项目" [ref=e16] [cursor=pointer]:
+          - /url: /create
+        - link "会话列表" [ref=e17] [cursor=pointer]:
+          - /url: /sessions
+          - text: 会话列表
+      - generic [ref=e19]:
+        - generic [ref=e20]:
+          - 'button "切换主题，当前: 跟随系统" [ref=e21] [cursor=pointer]':
+            - img [ref=e22]
+          - generic: 跟随系统
+        - link "访问 GitHub 仓库" [ref=e26] [cursor=pointer]:
+          - /url: https://github.com
+          - img [ref=e27]
+  - main [ref=e30]:
+    - generic [ref=e31]:
+      - generic [ref=e32]:
+        - generic [ref=e33]:
+          - heading "会话列表" [level=1] [ref=e34]
+          - paragraph [ref=e35]: 管理您的所有创作项目
+        - link "创建新项目" [ref=e36] [cursor=pointer]:
+          - /url: /create
+          - button "创建新项目" [ref=e37]:
+            - generic [ref=e38]: 创建新项目
+      - generic [ref=e40]:
+        - combobox [ref=e42]:
+          - option "全部状态" [selected]
+          - option "运行中"
+          - option "已完成"
+          - option "已暂停"
+          - option "失败"
+        - generic [ref=e43]: 共 10 个项目
+      - generic [ref=e44]:
+        - img [ref=e46]
+        - heading "暂无项目" [level=3] [ref=e48]
+        - paragraph [ref=e49]: 创建第一个项目，开始AI辅助创作
+        - link "创建新项目" [ref=e50] [cursor=pointer]:
+          - /url: /create
+          - button "创建新项目" [ref=e51]:
+            - generic [ref=e52]: 创建新项目
+```

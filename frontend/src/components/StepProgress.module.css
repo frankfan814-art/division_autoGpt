@@ -1,0 +1,150 @@
+/* StepProgress 组件样式 */
+
+.step-progress {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  padding: 0.75rem;
+  background: var(--color-background);
+  border-radius: 0.5rem;
+  font-size: 0.875rem;
+}
+
+.step {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.5rem;
+  padding: 0.5rem;
+  border-radius: 0.375rem;
+  line-height: 1.4;
+}
+
+.step-icon {
+  flex-shrink: 0;
+  font-size: 1rem;
+}
+
+.step-message {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+  flex: 1;
+}
+
+.step-detail {
+  color: var(--color-text-secondary);
+  font-size: 0.8125rem;
+}
+
+/* 步骤状态颜色 */
+
+.step-info {
+  background: var(--color-info-bg);
+  color: var(--color-info-text);
+}
+
+.step-success {
+  background: var(--color-success-bg);
+  color: var(--color-success-text);
+}
+
+.step-warning {
+  background: var(--color-warning-bg);
+  color: var(--color-warning-text);
+}
+
+.step-error {
+  background: var(--color-error-bg);
+  color: var(--color-error-text);
+}
+
+/* 评分显示 */
+
+.step-score {
+  padding: 0.125rem 0.5rem;
+  border-radius: 0.25rem;
+  font-size: 0.8125rem;
+  font-weight: 500;
+}
+
+.score-passed {
+  background: rgba(34, 197, 94, 0.2);
+  color: #16a34a;
+}
+
+.score-failed {
+  background: rgba(239, 68, 68, 0.2);
+  color: #dc2626;
+}
+
+/* 问题列表 */
+
+.step-issues {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  margin-top: 0.5rem;
+  padding-left: 0.5rem;
+}
+
+.step-issue {
+  font-size: 0.8125rem;
+  color: var(--color-text-secondary);
+  line-height: 1.3;
+}
+
+/* 响应式 */
+
+@media (max-width: 640px) {
+  .step-progress {
+    padding: 0.5rem;
+    font-size: 0.8125rem;
+  }
+
+  .step {
+    padding: 0.375rem 0.5rem;
+  }
+
+  .step-score {
+    font-size: 0.75rem;
+    padding: 0.125rem 0.375rem;
+  }
+}
+
+/* 🔥 新增：步骤历史样式 */
+.step-item {
+  animation: slideIn 0.3s ease-out;
+}
+
+@keyframes slideIn {
+  from {
+    opacity: 0;
+    transform: translateY(-10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* 最新步骤 - 高亮显示 */
+.step-latest {
+  border-left: 3px solid var(--color-primary);
+  background: linear-gradient(to right, var(--color-primary-bg), transparent);
+  padding-left: 0.75rem;
+  font-weight: 500;
+}
+
+/* 历史步骤 - 稍微淡出 */
+.step-history {
+  opacity: 0.85;
+  font-size: 0.9375em;  /* 稍微小一点 */
+  padding-left: 0.75rem;
+  border-left: 2px solid transparent;
+}
+
+.step-history:hover {
+  opacity: 1;
+  background: var(--color-hover-bg);
+}

@@ -2,7 +2,7 @@
 Session API routes
 """
 
-from typing import List, Optional
+from typing import List, Optional, Dict, Any
 
 from fastapi import APIRouter, Depends, HTTPException, status, Query
 from fastapi.responses import FileResponse
@@ -84,7 +84,7 @@ async def list_sessions(
         total = len(sessions)
 
         return SessionListResponse(
-            sessions=sessions,
+            items=sessions,
             total=total,
             page=page,
             page_size=page_size,
@@ -163,7 +163,7 @@ async def delete_session(
     storage: SessionStorage = Depends(get_session_storage),
 ):
     """
-    Delete a session and all its data
+    Delete a session and all its data (including vector database)
     """
     session = await storage.get_session(session_id)
     if not session:
@@ -173,11 +173,20 @@ async def delete_session(
         )
 
     try:
+        # Delete from database
         await storage.delete_session(session_id)
 
         # Also delete files
+        from creative_autogpt.storage.file_store import FileStore
         file_store = FileStore()
         await file_store.delete_session_files(session_id)
+
+        # 🔥 Also delete vector database collection for this session
+        from creative_autogpt.storage.vector_store import VectorStore
+        vector_store = VectorStore()
+        await vector_store.delete_session_collection(session_id)
+
+        logger.info(f"Session {session_id} deleted successfully (including vector data)")
 
         return SuccessResponse(
             success=True,
@@ -395,7 +404,7 @@ async def start_session(
 
         # Initialize components
         llm_client = MultiLLMClient()
-        vector_store = VectorStore()
+        vector_store = VectorStore(session_id=session_id)  # 🔥 Use session-specific collection
         memory = VectorMemoryManager(vector_store=vector_store)
         evaluator = EvaluationEngine(llm_client=llm_client)
 
@@ -650,6 +659,236 @@ async def stop_session(
         raise
     except Exception as e:
         logger.error(f"Failed to stop session: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=str(e)
+        )
+
+
+@router.get("/resumable/list", response_model=List[Dict[str, Any]])
+async def list_resumable_sessions(
+    storage: SessionStorage = Depends(get_session_storage),
+):
+    """
+    获取所有可以恢复的会话列表
+
+    返回状态为 running 或 paused 且有引擎状态的会话。
+    """
+    try:
+        sessions = await storage.get_resumable_sessions()
+        return sessions
+    except Exception as e:
+        logger.error(f"Failed to list resumable sessions: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=str(e)
+        )
+
+
+@router.post("/{session_id}/restore", response_model=SuccessResponse)
+async def restore_session(
+    session_id: str,
+    storage: SessionStorage = Depends(get_session_storage),
+):
+    """
+    恢复一个暂停的会话
+
+    从数据库恢复会话状态并重新创建引擎实例。
+    恢复后的会话将处于 paused 状态，需要通过 resume 继续执行。
+    """
+    session = await storage.get_session(session_id)
+    if not session:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Session {session_id} not found"
+        )
+
+    try:
+        from creative_autogpt.core.session_restorer import SessionRestorer
+        from creative_autogpt.core.engine_registry import get_registry
+        from creative_autogpt.utils.llm_client import MultiLLMClient
+        from creative_autogpt.storage.vector_store import VectorStore
+        from creative_autogpt.core.vector_memory import VectorMemoryManager
+        from creative_autogpt.core.evaluator import EvaluationEngine
+        from creative_autogpt.api.routes.websocket import manager
+
+        registry = await get_registry()
+
+        # 检查是否已有引擎在运行
+        if registry.get(session_id):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Session {session_id} already has an active engine"
+            )
+
+        # 创建记忆管理器工厂
+        def memory_factory(sid: str):
+            vector_store = VectorStore(session_id=sid)  # 🔥 Use session-specific collection
+            return VectorMemoryManager(vector_store=vector_store)
+
+        # 创建评估器工厂
+        def evaluator_factory():
+            llm_client = MultiLLMClient()
+            return EvaluationEngine(llm_client=llm_client)
+
+        # 创建恢复服务
+        restorer = SessionRestorer(
+            storage=storage,
+            llm_client=MultiLLMClient(),
+            memory_factory=memory_factory,
+            evaluator_factory=evaluator_factory,
+        )
+
+        # 检查是否可以恢复
+        if not await restorer.can_restore(session_id):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Session {session_id} cannot be restored. "
+                       f"It may be completed, failed, or missing engine state."
+            )
+
+        # 恢复会话
+        engine = await restorer.restore_session(session_id)
+
+        if not engine:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"Failed to restore session {session_id}"
+            )
+
+        # 设置回调（与 start_session 类似）
+        def on_task_start(task):
+            import asyncio
+            asyncio.create_task(
+                manager.broadcast_to_session(
+                    {
+                        "event": "task_start",
+                        "session_id": session_id,
+                        "task": {
+                            "task_id": task.task_id,
+                            "task_type": task.task_type.value,
+                            "description": task.description,
+                        },
+                    },
+                    session_id,
+                )
+            )
+
+        def on_task_complete(task, result, evaluation):
+            import asyncio
+            asyncio.create_task(
+                manager.broadcast_to_session(
+                    {
+                        "event": "task_complete",
+                        "session_id": session_id,
+                        "task": {
+                            "task_id": task.task_id,
+                            "task_type": task.task_type.value,
+                            "result": result[:500] if result else None,
+                            "evaluation": evaluation.to_dict() if evaluation else None,
+                        },
+                    },
+                    session_id,
+                )
+            )
+
+        def on_progress(progress):
+            import asyncio
+            asyncio.create_task(
+                manager.broadcast_to_session(
+                    {
+                        "event": "progress",
+                        "session_id": session_id,
+                        "progress": progress,
+                    },
+                    session_id,
+                )
+            )
+
+        engine.set_callbacks(
+            on_task_start=on_task_start,
+            on_task_complete=on_task_complete,
+            on_progress=on_progress,
+        )
+
+        # 注册引擎（不保存状态，因为刚从数据库恢复）
+        await registry.register(session_id, engine, save_state=False)
+
+        # 更新会话状态
+        await storage.update_session_status(session_id, DBSessionStatus.PAUSED)
+
+        logger.info(f"Successfully restored session {session_id}")
+
+        return SuccessResponse(
+            success=True,
+            message=f"Session {session_id} restored successfully. Use resume to continue."
+        )
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to restore session: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=str(e)
+        )
+
+
+@router.get("/{session_id}/restore-info", response_model=Dict[str, Any])
+async def get_restore_info(
+    session_id: str,
+    storage: SessionStorage = Depends(get_session_storage),
+):
+    """
+    获取会话恢复信息
+
+    返回会话的恢复状态、进度等详细信息。
+    """
+    session = await storage.get_session(session_id)
+    if not session:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Session {session_id} not found"
+        )
+
+    try:
+        from creative_autogpt.core.session_restorer import SessionRestorer
+        from creative_autogpt.utils.llm_client import MultiLLMClient
+        from creative_autogpt.storage.vector_store import VectorStore
+        from creative_autogpt.core.vector_memory import VectorMemoryManager
+        from creative_autogpt.core.evaluator import EvaluationEngine
+
+        # 创建工厂函数
+        def memory_factory(sid: str):
+            vector_store = VectorStore(session_id=sid)  # 🔥 Use session-specific collection
+            return VectorMemoryManager(vector_store=vector_store)
+
+        def evaluator_factory():
+            llm_client = MultiLLMClient()
+            return EvaluationEngine(llm_client=llm_client)
+
+        # 创建恢复服务
+        restorer = SessionRestorer(
+            storage=storage,
+            llm_client=MultiLLMClient(),
+            memory_factory=memory_factory,
+            evaluator_factory=evaluator_factory,
+        )
+
+        info = await restorer.get_restore_info(session_id)
+
+        if not info:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Could not get restore info for session {session_id}"
+            )
+
+        return info
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to get restore info: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=str(e)

@@ -87,6 +87,8 @@ export const TaskApproval = ({ task, sessionId, onApprove, onReject, onRegenerat
 
   const evaluation = task.evaluation;
   const score = evaluation?.score || 0;
+  const qualityScore = evaluation?.quality_score;
+  const consistencyScore = evaluation?.consistency_score;
   const scoreColor = score >= 0.9 ? 'text-green-600' : score >= 0.7 ? 'text-yellow-600' : 'text-red-600';
 
   return (
@@ -102,14 +104,39 @@ export const TaskApproval = ({ task, sessionId, onApprove, onReject, onRegenerat
               {getTaskTypeLabel(task.task_type)}
             </Badge>
           </div>
-          <div className="flex items-center gap-3 text-sm text-gray-600">
+          <div className="flex items-center gap-3 text-sm text-gray-600 flex-wrap">
             <span>🤖 {task.llm_provider} - {task.llm_model}</span>
             {evaluation && (
               <>
                 <span>•</span>
-                <span className={`font-semibold ${scoreColor}`}>
-                  评分: {(score * 100).toFixed(0)}/100
-                </span>
+                {/* 🔥 显示质量和一致性评分 */}
+                {qualityScore !== undefined ? (
+                  <>
+                    <span className={`font-semibold ${
+                      qualityScore >= 0.8 ? 'text-green-600' :
+                      qualityScore >= 0.6 ? 'text-yellow-600' :
+                      'text-red-600'
+                    }`}>
+                      📈 质量: {(qualityScore * 10).toFixed(1)}/10
+                    </span>
+                    {consistencyScore !== undefined && (
+                      <>
+                        <span>•</span>
+                        <span className={`font-semibold ${
+                          consistencyScore >= 0.8 ? 'text-green-600' :
+                          consistencyScore >= 0.6 ? 'text-yellow-600' :
+                          'text-red-600'
+                        }`}>
+                          🔍 一致性: {(consistencyScore * 10).toFixed(1)}/10
+                        </span>
+                      </>
+                    )}
+                  </>
+                ) : (
+                  <span className={`font-semibold ${scoreColor}`}>
+                    评分: {(score * 100).toFixed(0)}/100
+                  </span>
+                )}
                 <span>•</span>
                 <span className={evaluation.passed ? 'text-green-600' : 'text-red-600'}>
                   {evaluation.passed ? '✓ 通过' : '✗ 未通过'}

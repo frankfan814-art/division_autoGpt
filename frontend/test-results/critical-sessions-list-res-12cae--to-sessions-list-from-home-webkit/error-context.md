@@ -1,0 +1,68 @@
+# Page snapshot
+
+```yaml
+- generic [ref=e3]:
+  - banner [ref=e4]:
+    - generic [ref=e6]:
+      - link "C Creative AutoGPT AI 驱动的创意写作" [ref=e7]:
+        - /url: /
+        - generic [ref=e9]: C
+        - generic [ref=e11]:
+          - generic [ref=e12]: Creative AutoGPT
+          - generic [ref=e13]: AI 驱动的创意写作
+      - navigation [ref=e14]:
+        - link "首页" [ref=e15]:
+          - /url: /
+          - text: 首页
+        - link "创建项目" [ref=e17]:
+          - /url: /create
+        - link "会话列表" [ref=e18]:
+          - /url: /sessions
+      - generic [ref=e19]:
+        - generic [ref=e20]:
+          - 'button "切换主题，当前: 跟随系统" [ref=e21] [cursor=pointer]':
+            - img [ref=e22]
+          - generic: 跟随系统
+        - link "访问 GitHub 仓库" [ref=e24]:
+          - /url: https://github.com
+          - img [ref=e25]
+  - main [ref=e28]:
+    - generic [ref=e29]:
+      - generic [ref=e30]:
+        - heading "Creative AutoGPT" [level=1] [ref=e31]
+        - paragraph [ref=e32]: 智能小说创作助手 - 让AI帮你创作精彩故事
+        - generic [ref=e33]:
+          - link "创建新项目" [ref=e34]:
+            - /url: /create
+            - button "创建新项目" [ref=e35] [cursor=pointer]:
+              - generic [ref=e36]: 创建新项目
+          - link "查看会话列表" [ref=e37]:
+            - /url: /sessions
+            - button "查看会话列表" [ref=e38] [cursor=pointer]:
+              - generic [ref=e39]: 查看会话列表
+      - generic [ref=e40]:
+        - generic [ref=e41]:
+          - generic [ref=e42]: 🤖
+          - heading "智能多模型路由" [level=3] [ref=e43]
+          - paragraph [ref=e44]: 自动选择最适合的LLM处理不同任务，优化创作质量和效率
+        - generic [ref=e45]:
+          - generic [ref=e46]: 📝
+          - heading "实时预览反馈" [level=3] [ref=e47]
+          - paragraph [ref=e48]: 实时查看创作进度，提供即时反馈，引导AI创作方向
+        - generic [ref=e49]:
+          - generic [ref=e50]: ✅
+          - heading "质量评估系统" [level=3] [ref=e51]
+          - paragraph [ref=e52]: 内置多维度质量评估，确保内容符合创作标准
+      - generic [ref=e53]:
+        - generic [ref=e54]:
+          - heading "最近项目" [level=2] [ref=e55]
+          - link "查看全部 →" [ref=e56]:
+            - /url: /sessions
+        - generic [ref=e57]:
+          - generic [ref=e58]: 📝
+          - paragraph [ref=e59]: 暂无项目，创建第一个项目吧！
+          - link "创建新项目" [ref=e60]:
+            - /url: /create
+            - button "创建新项目" [ref=e61] [cursor=pointer]:
+              - generic [ref=e62]: 创建新项目
+```

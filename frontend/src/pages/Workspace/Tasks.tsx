@@ -7,7 +7,7 @@ import { useTasks, useFilteredTasks } from '@/hooks/useTask';
 import { TaskCard } from '@/components/TaskCard';
 import { Select } from '@/components/ui/Select';
 import { Badge } from '@/components/ui/Badge';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useTaskStore } from '@/stores/taskStore';
 import { useToast } from '@/components/ui/Toast';
 import { useWebSocket } from '@/hooks/useWebSocket';
@@ -28,6 +28,15 @@ export const Tasks = () => {
   const [filter, setFilter] = useState('all');
   const [activeTaskId, setActiveTaskId] = useState<string | null>(null);
   const toast = useToast();
+  const setCurrentSession = useTaskStore((state) => state.setCurrentSession);  // 🔥 新增
+
+  // 🔥 新增：设置当前会话到 taskStore
+  useEffect(() => {
+    if (sessionId) {
+      console.log('🔄 Tasks: Setting current session:', sessionId);
+      setCurrentSession(sessionId);
+    }
+  }, [sessionId, setCurrentSession]);
   const setCurrentTask = useTaskStore((state) => state.setCurrentTask);
 
   const filteredTasks = filter === 'all'

@@ -297,7 +297,13 @@ async def handle_start(
 
     try:
         logger.info(f"🔧 Creating engine for session {session_id[:8]}")
-        
+
+        # 🔥 加载已完成的任务，以便恢复
+        # 注意：get_task_results 不支持 status 参数，需要获取后过滤
+        all_tasks = await storage.get_task_results(session_id)
+        completed_tasks = [t for t in all_tasks if t.get("status") == "completed"]
+        logger.info(f"📋 Found {len(completed_tasks)} completed tasks out of {len(all_tasks)} total tasks for session {session_id[:8]}")
+
         # Create loop engine
         from creative_autogpt.modes.novel import NovelMode
 
@@ -306,9 +312,53 @@ async def handle_start(
         # Initialize components
         llm_client = MultiLLMClient()
         from creative_autogpt.storage.vector_store import VectorStore
-        vector_store = VectorStore()
+        vector_store = VectorStore(session_id=session_id)  # 🔥 Use session-specific collection
         memory = VectorMemoryManager(vector_store=vector_store)
         evaluator = EvaluationEngine(llm_client=llm_client)
+
+        # 🔥 将已完成的任务加载到 memory 中，确保后续任务可以使用之前的上下文
+        from creative_autogpt.core.vector_memory import TaskResult
+        from creative_autogpt.storage.vector_store import MemoryType
+
+        for task_result in completed_tasks:
+            try:
+                # 确定任务类型对应的 memory_type
+                task_type = task_result.get("task_type", "")
+                metadata = task_result.get("metadata", {})
+
+                # 使用 task_type 映射到 memory_type
+                memory_type_mapping = {
+                    "创意脑暴": MemoryType.GENERAL,
+                    "故事核心": MemoryType.GENERAL,
+                    "大纲": MemoryType.OUTLINE,
+                    "人物设计": MemoryType.CHARACTER,
+                    "世界观规则": MemoryType.WORLDVIEW,
+                    "风格元素": MemoryType.GENERAL,
+                    "事件": MemoryType.PLOT,
+                    "场景物品冲突": MemoryType.SCENE,
+                    "伏笔列表": MemoryType.FORESHADOW,
+                }
+
+                memory_type = memory_type_mapping.get(task_type, MemoryType.GENERAL)
+
+                # 创建 TaskResult 对象并添加到 memory
+                task_obj = TaskResult(
+                    task_id=task_result.get("task_id"),
+                    task_type=task_type,
+                    content=task_result.get("result", ""),
+                    memory_type=memory_type,
+                    metadata=metadata,
+                    chapter_index=metadata.get("chapter_index"),
+                )
+
+                # 添加到短期记忆中，使后续任务可以访问
+                memory._short_term.append(task_obj)
+                logger.debug(f"✅ Loaded completed task {task_type} into memory")
+
+            except Exception as e:
+                logger.warning(f"⚠️ Failed to load task {task_result.get('task_type')} into memory: {e}")
+
+        logger.info(f"✅ Loaded {len(completed_tasks)} completed tasks into memory")
 
         engine = LoopEngine(
             session_id=session_id,
@@ -349,7 +399,7 @@ async def handle_start(
             """Send task complete notification and save to database"""
             logger.info(f"✅ Task completed: {task.task_type.value}")
             import asyncio
-            
+
             # Save to database for persistence
             async def save_and_broadcast():
                 try:
@@ -378,9 +428,21 @@ async def handle_start(
                         evaluation=evaluation.to_dict() if evaluation else None,
                     )
                     logger.debug(f"💾 Saved task result to database: {task.task_type.value}")
+
+                    # 🔥 更新会话级别的统计数据（llm_calls 和 tokens_used）
+                    # 从 engine 获取统计数据
+                    engine = running_engines.get(session_id)
+                    if engine:
+                        stats = engine.get_stats()
+                        await storage.update_session_progress(
+                            session_id=session_id,
+                            llm_calls=stats.get("llm_calls", 0),
+                            tokens_used=stats.get("tokens_used", 0),
+                        )
+                        logger.debug(f"💾 Updated session stats: llm_calls={stats.get('llm_calls', 0)}, tokens_used={stats.get('tokens_used', 0)}")
                 except Exception as e:
                     logger.error(f"Failed to save task result: {e}")
-                
+
                 # Broadcast to clients
                 await manager.broadcast_to_session(
                     {
@@ -409,7 +471,7 @@ async def handle_start(
                     },
                     session_id,
                 )
-            
+
             asyncio.create_task(save_and_broadcast())
 
         def on_progress(progress):
@@ -481,12 +543,28 @@ async def handle_start(
                 )
             )
 
+        def on_step_progress(step_data):
+            """🔥 Send detailed step progress to frontend"""
+            logger.info(f"📍 Step progress: {step_data.get('step')} - {step_data.get('message')}")
+            import asyncio
+            asyncio.create_task(
+                manager.broadcast_to_session(
+                    {
+                        "event": "step_progress",
+                        "session_id": session_id,
+                        "step": step_data,
+                    },
+                    session_id,
+                )
+            )
+
         engine.set_callbacks(
             on_task_start=on_task_start,
             on_task_complete=on_task_complete,
             on_task_fail=on_task_fail,
             on_progress=on_progress,
             on_task_approval_needed=on_task_approval_needed,
+            on_step_progress=on_step_progress,  # 🔥 新增
         )
 
         # Store engine
@@ -514,10 +592,15 @@ async def handle_start(
                 goal = session.get("goal", {})
                 chapter_count = goal.get("chapter_count") or session.get("config", {}).get("chapter_count")
                 logger.info(f"📚 Starting engine.run with goal: {goal.get('title', 'Untitled')}, chapters: {chapter_count}")
-                
+
+                # 🔥 传递已完成的任务ID列表，让 engine 跳过这些任务
+                completed_task_ids = [t.get("task_id") for t in completed_tasks if t.get("task_id")]
+                logger.info(f"⏭️ Skipping {len(completed_task_ids)} completed tasks")
+
                 result = await engine.run(
                     goal=goal,
                     chapter_count=chapter_count,
+                    completed_task_ids=completed_task_ids,  # 🔥 传递已完成的任务ID
                 )
 
                 # Send completion event based on execution status

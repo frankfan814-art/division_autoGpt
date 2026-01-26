@@ -1,0 +1,100 @@
+# Page snapshot
+
+```yaml
+- generic [ref=e3]:
+  - banner [ref=e4]:
+    - generic [ref=e6]:
+      - link "C Creative AutoGPT AI 驱动的创意写作" [ref=e7] [cursor=pointer]:
+        - /url: /
+        - generic [ref=e9]: C
+        - generic [ref=e11]:
+          - generic [ref=e12]: Creative AutoGPT
+          - generic [ref=e13]: AI 驱动的创意写作
+      - navigation [ref=e14]:
+        - link "首页" [ref=e15] [cursor=pointer]:
+          - /url: /
+        - link "创建项目" [ref=e16] [cursor=pointer]:
+          - /url: /create
+        - link "会话列表" [ref=e17] [cursor=pointer]:
+          - /url: /sessions
+      - generic [ref=e18]:
+        - generic [ref=e19]:
+          - 'button "切换主题，当前: 跟随系统" [ref=e20] [cursor=pointer]':
+            - img [ref=e21]
+          - generic: 跟随系统
+        - link "访问 GitHub 仓库" [ref=e25] [cursor=pointer]:
+          - /url: https://github.com
+          - img [ref=e26]
+  - generic [ref=e29]:
+    - complementary [ref=e30]:
+      - generic [ref=e32]:
+        - img [ref=e34]
+        - generic [ref=e40]:
+          - heading "E2E Auto Start 1769341112624" [level=3] [ref=e41]
+          - generic [ref=e42]:
+            - generic [ref=e43]:
+              - img [ref=e44]
+              - text: 运行中
+            - generic [ref=e46]: 0 个任务
+      - navigation [ref=e47]:
+        - link "总览" [ref=e48] [cursor=pointer]:
+          - /url: /workspace/3f268a26-358b-495a-8e90-3dcbe7533ad7
+          - img [ref=e49]
+          - generic [ref=e54]: 总览
+        - link "任务列表" [ref=e55] [cursor=pointer]:
+          - /url: /workspace/3f268a26-358b-495a-8e90-3dcbe7533ad7/tasks
+          - img [ref=e56]
+          - generic [ref=e62]: 任务列表
+        - link "内容预览" [ref=e63] [cursor=pointer]:
+          - /url: /workspace/3f268a26-358b-495a-8e90-3dcbe7533ad7/preview
+          - img [ref=e64]
+          - generic [ref=e67]: 内容预览
+        - link "阅读模式" [ref=e68] [cursor=pointer]:
+          - /url: /workspace/3f268a26-358b-495a-8e90-3dcbe7533ad7/reader
+          - img [ref=e69]
+          - generic [ref=e72]: 阅读模式
+      - link "返回会话列表" [ref=e74] [cursor=pointer]:
+        - /url: /sessions
+        - img [ref=e75]
+        - generic [ref=e78]: 返回会话列表
+    - main [ref=e79]:
+      - generic [ref=e80]:
+        - generic [ref=e82]:
+          - generic [ref=e86]: 等待任务启动...
+          - generic [ref=e89]:
+            - paragraph [ref=e90]: 等待任务启动
+            - paragraph [ref=e91]: 任务开始执行后，结果将在这里实时显示
+        - generic [ref=e92]:
+          - generic [ref=e93]:
+            - generic [ref=e94]:
+              - generic [ref=e95]: 任务进度
+              - generic [ref=e96]: 0/72
+            - paragraph [ref=e100]: "▶ 正在执行: 创意脑暴"
+          - generic [ref=e102]:
+            - generic [ref=e103]:
+              - heading "用户反馈" [level=2] [ref=e104]
+              - paragraph [ref=e105]: 向AI提供反馈，指导创作方向
+            - generic [ref=e107]:
+              - img [ref=e108]
+              - paragraph [ref=e110]: 暂无反馈记录
+              - paragraph [ref=e111]: 输入反馈内容，帮助AI更好地理解您的需求
+            - generic [ref=e112]:
+              - generic [ref=e113]: 📊 快捷反馈
+              - generic [ref=e114]:
+                - button "📝 太简略" [ref=e115] [cursor=pointer]:
+                  - generic [ref=e116]: 📝
+                  - generic [ref=e117]: 太简略
+                - button "✂️ 太冗长" [ref=e118] [cursor=pointer]:
+                  - generic [ref=e119]: ✂️
+                  - generic [ref=e120]: 太冗长
+                - button "🎨 风格不对" [ref=e121] [cursor=pointer]:
+                  - generic [ref=e122]: 🎨
+                  - generic [ref=e123]: 风格不对
+                - button "🤔 逻辑问题" [ref=e124] [cursor=pointer]:
+                  - generic [ref=e125]: 🤔
+                  - generic [ref=e126]: 逻辑问题
+            - generic [ref=e128]:
+              - textbox "输入您的反馈意见..." [ref=e130]
+              - button "发送" [disabled] [ref=e131]:
+                - generic [ref=e132]: 发送
+```

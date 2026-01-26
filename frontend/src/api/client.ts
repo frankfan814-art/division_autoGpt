@@ -5,7 +5,9 @@
 import axios from 'axios';
 import type { Session, SessionCreateRequest, Task, TaskProgress, HealthResponse } from '@/types';
 
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || '/api/v1';
+// API基础路径 - 开发环境通过Vite代理转发到后端
+// 生产环境需要配置 VITE_API_BASE_URL 环境变量为完整的后端地址
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000';
 
 const apiClient = axios.create({
   baseURL: API_BASE_URL,
@@ -94,6 +96,24 @@ export const sessionsApi = {
       { format, include_metadata },
       { responseType: 'blob' }
     );
+    return response.data;
+  },
+
+  // 获取可恢复的会话列表
+  listResumable: async (): Promise<Session[]> => {
+    const response = await apiClient.get<Session[]>('/sessions/resumable/list');
+    return response.data;
+  },
+
+  // 恢复会话
+  restore: async (sessionId: string): Promise<any> => {
+    const response = await apiClient.post(`/sessions/${sessionId}/restore`);
+    return response.data;
+  },
+
+  // 获取会话恢复信息
+  getRestoreInfo: async (sessionId: string): Promise<any> => {
+    const response = await apiClient.get(`/sessions/${sessionId}/restore-info`);
     return response.data;
   },
 };

@@ -22,8 +22,6 @@ class NovelTaskType(str, Enum):
 
     # Planning phase
     STYLE_ELEMENTS = "风格元素"
-    THEME_CONFIRMATION = "主题确认"
-    MARKET_POSITIONING = "市场定位"
     OUTLINE = "大纲"
 
     # Element creation phase
@@ -33,8 +31,8 @@ class NovelTaskType(str, Enum):
     SCENES_ITEMS_CONFLICTS = "场景物品冲突"
     FORESHADOW_LIST = "伏笔列表"
 
-    # Consistency phase
-    CONSISTENCY_CHECK = "一致性检查"
+    # 注：一致性检查已合并到评估任务中
+    # CONSISTENCY_CHECK = "一致性检查"  # 已合并到 EVALUATION
 
     # Chapter generation phase
     CHAPTER_OUTLINE = "章节大纲"
@@ -165,8 +163,8 @@ class TaskPlanner:
     Phase 3: 人物设计 🔴基础
     Phase 4: 主题确认 → 风格元素 → 市场定位
     Phase 5: 事件 → 场景物品冲突 → 伏笔列表 🟡细节
-    Phase 6: 一致性检查 → 章节创作
-    
+    Phase 6: 章节创作（一致性检查已合并到综合评估任务中）
+
     章节创作时会从向量库检索：故事核心、大纲、世界观、人物、事件、伏笔
     确保不会跑偏！
     """
@@ -211,32 +209,19 @@ class TaskPlanner:
             is_foundation=True,  # 🔴 基础任务！所有对话和行为的依据
         ),
 
-        # ============ Phase 4: 主题与风格（从故事中提炼）============
-        TaskDefinition(
-            task_type=NovelTaskType.THEME_CONFIRMATION,
-            description="回顾大纲、世界观和人物，提炼故事的深层主题。主题应该从人物的选择和成长中自然涌现",
-            depends_on=["人物设计"],
-            optional=True,
-            is_foundation=False,  # 主题是提炼出来的，不是硬性约束
-        ),
+        # ============ Phase 4: 风格元素（与人物设计并行）============
         TaskDefinition(
             task_type=NovelTaskType.STYLE_ELEMENTS,
-            description="根据故事类型、世界观和目标读者，确定最适合的叙事风格、语言风格和节奏",
-            depends_on=["人物设计"],
+            description="根据故事类型，确定最适合的叙事风格、语言风格和节奏。风格指导会自动应用到场景生成和章节润色中",
+            depends_on=["大纲"],
             is_foundation=False,  # 风格影响写法，但不是内容约束
-        ),
-        TaskDefinition(
-            task_type=NovelTaskType.MARKET_POSITIONING,
-            description="综合以上所有元素，确定目标读者群和市场定位",
-            depends_on=["风格元素"],
-            is_foundation=False,
         ),
 
         # ============ Phase 5: 细节填充（为大纲添加血肉）============
         TaskDefinition(
             task_type=NovelTaskType.EVENTS,
             description="细化大纲中的每个章节，设计具体的事件序列。每个事件都要符合世界观规则，由人物性格驱动",
-            depends_on=["市场定位"],
+            depends_on=["人物设计", "风格元素"],
             is_foundation=True,  # 🔴 基础任务！具体发生什么
         ),
         TaskDefinition(
@@ -252,14 +237,8 @@ class TaskPlanner:
             is_foundation=True,  # 🔴 基础任务！章节要埋设和回收伏笔
         ),
 
-        # ============ Phase 6: 一致性检查 ============
-        TaskDefinition(
-            task_type=NovelTaskType.CONSISTENCY_CHECK,
-            description="从顶级作家的视角审视整个创作：大纲逻辑是否通顺？人物行为是否符合性格和世界观规则？伏笔是否能回收？",
-            depends_on=["伏笔列表"],
-            is_foundation=False,  # 检查任务，不是创作依据
-        ),
-
+        # ============ Phase 6: 章节创作 ============
+        # 注：一致性检查已合并到综合评估任务中，不再单独列出
         # Phase 7: Chapter Generation - defined per chapter dynamically
     ]
 
@@ -409,15 +388,9 @@ class TaskPlanner:
                         prev_chapter_content_id = task_id
                         break
 
-            # Chapter Outline - 依赖大纲或一致性检查（取决于流程）
-            # 检查是否有一致性检查任务
-            has_consistency_check = any(
-                task.task_type == NovelTaskType.CONSISTENCY_CHECK 
-                for task in self.tasks.values()
-            )
-            base_dep = "一致性检查" if has_consistency_check else "大纲"
-            
-            outline_deps = [base_dep]
+            # Chapter Outline - 直接依赖大纲
+            # 注：一致性检查已合并到综合评估任务中
+            outline_deps = ["大纲"]
             if prev_chapter_content_id:
                 outline_deps.append(prev_chapter_content_id)
                 

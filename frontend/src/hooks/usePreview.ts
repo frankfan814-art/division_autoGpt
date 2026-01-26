@@ -22,7 +22,7 @@ export const usePreview = (sessionId: string | null) => {
     setError,
   } = usePreviewStore();
 
-  const tasks = useTaskStore((state) => state.tasks);
+  const tasks = useTaskStore((state) => state.getTasks());  // 🔥 修复：使用 getTasks()
 
   // Extract outline from tasks
   useEffect(() => {

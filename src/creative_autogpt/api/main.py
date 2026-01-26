@@ -25,13 +25,41 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
 
     settings = get_settings()
 
-    # Initialize any resources here
-    # (e.g., database connections, LLM clients)
+    # Initialize database storage
+    from creative_autogpt.storage.session import SessionStorage
+    from creative_autogpt.core.engine_registry import get_registry
+
+    storage = SessionStorage()
+    await storage.initialize()
+
+    # Configure EngineRegistry with storage
+    registry = await get_registry()
+    registry.set_storage(storage)
+
+    # 检查可恢复的会话
+    try:
+        resumable_count = await registry.restore_session_on_startup()
+        if resumable_count > 0:
+            logger.info(f"Found {resumable_count} sessions that can be restored")
+    except Exception as e:
+        logger.warning(f"Failed to check resumable sessions on startup: {e}")
 
     yield
 
     # Shutdown
     logger.info("Shutting down Creative AutoGPT API")
+
+    # Shutdown registry to clean up any running engines
+    try:
+        await registry.shutdown()
+    except Exception as e:
+        logger.error(f"Error shutting down registry: {e}")
+
+    # Close storage
+    try:
+        await storage.close()
+    except Exception as e:
+        logger.error(f"Error closing storage: {e}")
 
 
 def create_app() -> FastAPI:

@@ -55,6 +55,9 @@ export const useSessions = (params?: { status?: string; page?: number; page_size
       removeSession(sessionId);
       queryClient.invalidateQueries({ queryKey: ['sessions'] });
     },
+    onError: (error) => {
+      console.error('删除会话失败:', error);
+    },
   });
 
   // Pause session mutation
@@ -90,6 +93,22 @@ export const useSessions = (params?: { status?: string; page?: number; page_size
     },
   });
 
+  // Restore session mutation
+  const restoreMutation = useMutation({
+    mutationFn: (sessionId: string) => sessionsApi.restore(sessionId),
+    onSuccess: (_, sessionId) => {
+      queryClient.invalidateQueries({ queryKey: ['sessions'] });
+      queryClient.invalidateQueries({ queryKey: ['session', sessionId] });
+    },
+  });
+
+  // Get resumable sessions
+  const { data: resumableSessions = [] } = useQuery({
+    queryKey: ['resumable-sessions'],
+    queryFn: () => sessionsApi.listResumable(),
+    refetchInterval: 10000, // 每10秒刷新一次
+  });
+
   return {
     sessions: data?.items || [],
     total: data?.total || 0,
@@ -98,6 +117,7 @@ export const useSessions = (params?: { status?: string; page?: number; page_size
     isLoading,
     error: error?.message || null,
     refetch,
+    resumableSessions,
 
     createSession: createMutation.mutateAsync,
     updateSession: updateMutation.mutateAsync,
@@ -105,6 +125,7 @@ export const useSessions = (params?: { status?: string; page?: number; page_size
     pauseSession: pauseMutation.mutateAsync,
     resumeSession: resumeMutation.mutateAsync,
     stopSession: stopMutation.mutateAsync,
+    restoreSession: restoreMutation.mutateAsync,
 
     isCreating: createMutation.isPending,
     isUpdating: updateMutation.isPending,
@@ -112,6 +133,7 @@ export const useSessions = (params?: { status?: string; page?: number; page_size
     isPausing: pauseMutation.isPending,
     isResuming: resumeMutation.isPending,
     isStopping: stopMutation.isPending,
+    isRestoring: restoreMutation.isPending,
   };
 };
 

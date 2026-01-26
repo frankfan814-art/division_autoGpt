@@ -2,7 +2,7 @@
  * Overview page for workspace
  */
 
-import React from 'react';
+import React, { useEffect } from 'react';
 import { useParams } from 'react-router-dom';
 import { useSession } from '@/hooks/useSession';
 import { useTaskProgress } from '@/hooks/useTask';
@@ -10,11 +10,21 @@ import { Progress } from '@/components/ui/Progress';
 import { Badge } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
 import { useSessionStore } from '@/stores/sessionStore';
+import { useTaskStore } from '@/stores/taskStore';  // 🔥 新增
 
 export const Overview = () => {
   const { sessionId } = useParams<{ sessionId: string }>();
   const { session, isLoading } = useSession(sessionId!);
   const { progress } = useTaskProgress(sessionId!);
+  const setCurrentSession = useTaskStore((state) => state.setCurrentSession);  // 🔥 新增
+
+  // 🔥 新增：设置当前会话到 taskStore
+  useEffect(() => {
+    if (sessionId) {
+      console.log('🔄 Overview: Setting current session:', sessionId);
+      setCurrentSession(sessionId);
+    }
+  }, [sessionId, setCurrentSession]);
 
   const pauseSession = useSessionStore((state) => state.updateSession);
 

@@ -11,6 +11,7 @@ export interface UseWebSocketOptions {
   onSessionUpdate?: WebSocketEventHandler;
   onTaskUpdate?: WebSocketEventHandler;
   onProgress?: WebSocketEventHandler;
+  onStepProgress?: WebSocketEventHandler;  // 🔥 新增
   onError?: WebSocketEventHandler;
   onMessage?: WebSocketEventHandler;
   autoConnect?: boolean;
@@ -21,6 +22,7 @@ export const useWebSocket = (options: UseWebSocketOptions = {}) => {
     onSessionUpdate,
     onTaskUpdate,
     onProgress,
+    onStepProgress,  // 🔥 新增
     onError,
     onMessage,
     autoConnect = true,
@@ -30,6 +32,7 @@ export const useWebSocket = (options: UseWebSocketOptions = {}) => {
   const updateSession = useSessionStore((state) => state.updateSession);
   const upsertTask = useTaskStore((state) => state.upsertTask);
   const setProgress = useTaskStore((state) => state.setProgress);
+  const setStepProgress = useTaskStore((state) => state.setStepProgress);  // 🔥 新增
 
   // Initialize WebSocket connection
   useEffect(() => {
@@ -129,6 +132,16 @@ export const useWebSocket = (options: UseWebSocketOptions = {}) => {
       onProgress?.(data);
     });
 
+    // 🔥 Subscribe to step progress updates (详细步骤进度)
+    const unsubscribeStepProgress = ws.subscribe('step_progress', (data) => {
+      const { step } = data as any;
+      console.log('📍 Step progress event received:', step);
+      if (step) {
+        setStepProgress(step);
+      }
+      onStepProgress?.(data);
+    });
+
     // Subscribe to session status events
     const unsubscribeCompleted = ws.subscribe('completed', (data) => {
       const { session_id, stats } = data as any;
@@ -194,6 +207,7 @@ export const useWebSocket = (options: UseWebSocketOptions = {}) => {
       unsubscribeTaskFail();
       unsubscribeTaskApprovalNeeded();
       unsubscribeProgress();
+      unsubscribeStepProgress();
       unsubscribeCompleted();
       unsubscribeFailed();
       unsubscribeStarted();
@@ -201,7 +215,7 @@ export const useWebSocket = (options: UseWebSocketOptions = {}) => {
       unsubscribeError();
       unsubscribeMessage();
     };
-  }, [autoConnect, onSessionUpdate, onTaskUpdate, onProgress, onError, onMessage]);
+  }, [autoConnect, onSessionUpdate, onTaskUpdate, onProgress, onStepProgress, onError, onMessage]);
 
   const send = useCallback((data: any) => {
     wsRef.current?.send(data);

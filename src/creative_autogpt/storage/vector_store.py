@@ -86,20 +86,30 @@ class VectorStore:
         persist_directory: Optional[str] = None,
         collection_name: str = "creative_autogpt",
         embedding_model: Optional[str] = None,
+        session_id: Optional[str] = None,
     ):
         """
         Initialize vector store
 
         Args:
             persist_directory: Directory to persist ChromaDB data
-            collection_name: Name of the ChromaDB collection
+            collection_name: Base name of the ChromaDB collection
             embedding_model: Name/path of embedding model
+            session_id: Optional session ID for collection isolation (prevents cross-session contamination)
         """
         settings = get_settings()
 
         self.persist_directory = persist_directory or settings.chroma_persist_directory
-        self.collection_name = collection_name
+        self.base_collection_name = collection_name
         self.embedding_model = embedding_model or settings.embedding_model
+        self.session_id = session_id
+
+        # 🔥 Use session-specific collection to prevent cross-contamination
+        if session_id:
+            # Use first 8 chars of session_id for collection name
+            self.collection_name = f"{collection_name}_{session_id[:8]}"
+        else:
+            self.collection_name = collection_name
 
         # Ensure persist directory exists
         Path(self.persist_directory).mkdir(parents=True, exist_ok=True)
@@ -120,11 +130,12 @@ class VectorStore:
         self.collection = self.client.get_or_create_collection(
             name=self.collection_name,
             embedding_function=self.embedding_function,
-            metadata={"description": "Creative AutoGPT memory collection"},
+            metadata={"description": f"Creative AutoGPT memory collection{f' for session {session_id[:8]}' if session_id else ''}"},
         )
 
         logger.info(
-            f"VectorStore initialized with {self.collection.count()} existing items"
+            f"VectorStore initialized with collection '{self.collection_name}' "
+            f"containing {self.collection.count()} existing items"
         )
 
     def _create_embedding_function(self):
@@ -652,3 +663,28 @@ class VectorStore:
                 "type_counts": {},
                 "error": str(e),
             }
+
+    async def delete_session_collection(self, session_id: str) -> bool:
+        """
+        Delete the collection for a specific session
+
+        Args:
+            session_id: The session ID
+
+        Returns:
+            True if successful
+        """
+        try:
+            # Generate collection name for this session
+            collection_name = f"{self.base_collection_name}_{session_id[:8]}"
+
+            # Delete the collection
+            self.client.delete_collection(name=collection_name)
+            logger.info(f"Deleted vector collection '{collection_name}' for session {session_id[:8]}")
+            return True
+
+        except Exception as e:
+            logger.warning(f"Failed to delete collection for session {session_id[:8]}: {e}")
+            # Collection might not exist, which is fine
+            return True
+

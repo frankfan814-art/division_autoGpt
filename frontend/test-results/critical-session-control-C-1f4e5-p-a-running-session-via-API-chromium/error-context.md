@@ -1,0 +1,122 @@
+# Page snapshot
+
+```yaml
+- generic [ref=e2]:
+  - generic [ref=e3]:
+    - banner [ref=e4]:
+      - generic [ref=e6]:
+        - link "C Creative AutoGPT AI 驱动的创意写作" [ref=e7] [cursor=pointer]:
+          - /url: /
+          - generic [ref=e9]: C
+          - generic [ref=e11]:
+            - generic [ref=e12]: Creative AutoGPT
+            - generic [ref=e13]: AI 驱动的创意写作
+        - navigation [ref=e14]:
+          - link "首页" [ref=e15] [cursor=pointer]:
+            - /url: /
+          - link "创建项目" [ref=e16] [cursor=pointer]:
+            - /url: /create
+          - link "会话列表" [ref=e17] [cursor=pointer]:
+            - /url: /sessions
+        - generic [ref=e18]:
+          - generic [ref=e19]:
+            - 'button "切换主题，当前: 跟随系统" [ref=e20] [cursor=pointer]':
+              - img [ref=e21]
+            - generic: 跟随系统
+          - link "访问 GitHub 仓库" [ref=e23] [cursor=pointer]:
+            - /url: https://github.com
+            - img [ref=e24]
+    - generic [ref=e27]:
+      - complementary [ref=e28]:
+        - generic [ref=e30]:
+          - img [ref=e32]
+          - generic [ref=e34]:
+            - heading "E2E Stop Test 1769340920127" [level=3] [ref=e35]
+            - generic [ref=e36]:
+              - generic [ref=e37]:
+                - img [ref=e38]
+                - text: 运行中
+              - generic [ref=e40]: 0 个任务
+        - navigation [ref=e41]:
+          - link "总览" [ref=e42] [cursor=pointer]:
+            - /url: /workspace/bac4c08b-8f6c-421c-914d-d2e1c82f1f03
+            - img [ref=e43]
+            - generic [ref=e48]: 总览
+          - link "任务列表" [ref=e49] [cursor=pointer]:
+            - /url: /workspace/bac4c08b-8f6c-421c-914d-d2e1c82f1f03/tasks
+            - img [ref=e50]
+            - generic [ref=e53]: 任务列表
+          - link "内容预览" [ref=e54] [cursor=pointer]:
+            - /url: /workspace/bac4c08b-8f6c-421c-914d-d2e1c82f1f03/preview
+            - img [ref=e55]
+            - generic [ref=e58]: 内容预览
+          - link "阅读模式" [ref=e59] [cursor=pointer]:
+            - /url: /workspace/bac4c08b-8f6c-421c-914d-d2e1c82f1f03/reader
+            - img [ref=e60]
+            - generic [ref=e63]: 阅读模式
+        - link "返回会话列表" [ref=e65] [cursor=pointer]:
+          - /url: /sessions
+          - img [ref=e66]
+          - generic [ref=e68]: 返回会话列表
+      - main [ref=e69]:
+        - generic [ref=e70]:
+          - generic [ref=e72]:
+            - button "创意脑暴 执行中" [ref=e76] [cursor=pointer]:
+              - text: 创意脑暴
+              - generic [ref=e77]: 执行中
+            - generic [ref=e79]:
+              - generic [ref=e81]:
+                - generic [ref=e82]:
+                  - heading "创意脑暴" [level=2] [ref=e83]
+                  - paragraph [ref=e84]: 像顶级作家一样进行创意脑暴，产生3-5个有吸引力的故事点子，每个点子包含：核心冲突、独特卖点、情感钩子
+                - generic [ref=e85]:
+                  - generic [ref=e86]: 执行中
+                  - generic [ref=e87]: Doubao
+              - paragraph [ref=e91]: 正在生成中...
+          - generic [ref=e92]:
+            - generic [ref=e93]:
+              - generic [ref=e94]:
+                - generic [ref=e95]: 任务进度
+                - generic [ref=e96]: 0/0
+              - generic [ref=e99]:
+                - paragraph [ref=e100]: "▶ 正在执行: 创意脑暴"
+                - paragraph [ref=e101]: "🤖 使用模型: Doubao"
+            - generic [ref=e103]:
+              - generic [ref=e104]:
+                - heading "用户反馈" [level=2] [ref=e105]
+                - paragraph [ref=e106]: 向AI提供反馈，指导创作方向
+              - generic [ref=e108]:
+                - img [ref=e109]
+                - paragraph [ref=e111]: 暂无反馈记录
+                - paragraph [ref=e112]: 输入反馈内容，帮助AI更好地理解您的需求
+              - generic [ref=e113]:
+                - generic [ref=e114]: 📊 快捷反馈
+                - generic [ref=e115]:
+                  - button "📝 太简略" [ref=e116] [cursor=pointer]:
+                    - generic [ref=e117]: 📝
+                    - generic [ref=e118]: 太简略
+                  - button "✂️ 太冗长" [ref=e119] [cursor=pointer]:
+                    - generic [ref=e120]: ✂️
+                    - generic [ref=e121]: 太冗长
+                  - button "🎨 风格不对" [ref=e122] [cursor=pointer]:
+                    - generic [ref=e123]: 🎨
+                    - generic [ref=e124]: 风格不对
+                  - button "🤔 逻辑问题" [ref=e125] [cursor=pointer]:
+                    - generic [ref=e126]: 🤔
+                    - generic [ref=e127]: 逻辑问题
+              - generic [ref=e129]:
+                - textbox "输入您的反馈意见..." [ref=e131]
+                - button "发送" [disabled] [ref=e132]:
+                  - generic [ref=e133]: 发送
+  - generic [ref=e134]:
+    - generic [ref=e135]:
+      - generic [ref=e136]: ✅
+      - paragraph [ref=e137]: 项目创建成功！
+      - button [ref=e138] [cursor=pointer]:
+        - img [ref=e139]
+    - generic [ref=e141]:
+      - generic [ref=e142]: ✅
+      - paragraph [ref=e143]: ✨ 创作任务已启动
+      - button [ref=e144] [cursor=pointer]:
+        - img [ref=e145]
+```

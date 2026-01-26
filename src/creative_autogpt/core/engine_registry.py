@@ -6,11 +6,14 @@ enabling pause/resume/stop functionality across API requests.
 """
 
 import asyncio
-from typing import Dict, Optional, Set
+from typing import Dict, Optional, Set, TYPE_CHECKING, Any
 
 from loguru import logger
 
-from creative_autogpt.core.loop_engine import LoopEngine, ExecutionStatus
+from creative_autogpt.core.loop_engine import LoopEngine, ExecutionStatus, ExecutionStats
+
+if TYPE_CHECKING:
+    from creative_autogpt.storage.session import SessionStorage
 
 
 class EngineRegistry:
@@ -22,12 +25,14 @@ class EngineRegistry:
     - Pausing, resuming, and stopping engines
     - Querying engine status
     - Cleanup of completed engines
+    - Persisting and restoring engine state
     """
 
     _instance: Optional["EngineRegistry"] = None
     _engines: Dict[str, LoopEngine] = {}
     _cleanup_task: Optional[asyncio.Task] = None
     _lock = asyncio.Lock()
+    _storage: Optional["SessionStorage"] = None
 
     def __new__(cls):
         if cls._instance is None:
@@ -40,13 +45,20 @@ class EngineRegistry:
             return
         self._engines = {}
         self._cleanup_task = None
+        self._storage = None
         self._initialized = True
         logger.info("EngineRegistry initialized")
+
+    def set_storage(self, storage: "SessionStorage") -> None:
+        """Set the session storage for persistence"""
+        self._storage = storage
+        logger.info("EngineRegistry: Session storage set")
 
     async def register(
         self,
         session_id: str,
         engine: LoopEngine,
+        save_state: bool = True,
     ) -> None:
         """
         Register a LoopEngine instance
@@ -54,10 +66,15 @@ class EngineRegistry:
         Args:
             session_id: Session identifier
             engine: LoopEngine instance
+            save_state: Whether to save engine state to database
         """
         async with self._lock:
             self._engines[session_id] = engine
             logger.info(f"Registered engine for session {session_id}")
+
+            # Save engine state to database for recovery
+            if save_state and self._storage:
+                await self._save_engine_state(session_id, engine)
 
             # Start cleanup task if not running
             if self._cleanup_task is None or self._cleanup_task.done():
@@ -277,6 +294,118 @@ class EngineRegistry:
             self._engines.clear()
 
         logger.info("EngineRegistry shutdown complete")
+
+    async def _save_engine_state(self, session_id: str, engine: LoopEngine) -> None:
+        """
+        保存引擎状态到数据库
+
+        Args:
+            session_id: 会话ID
+            engine: LoopEngine 实例
+        """
+        if not self._storage:
+            return
+
+        try:
+            # 获取引擎状态
+            state = {
+                "status": engine.get_status().value,
+                "stats": {
+                    "total_tasks": engine.stats.total_tasks,
+                    "completed_tasks": engine.stats.completed_tasks,
+                    "failed_tasks": engine.stats.failed_tasks,
+                    "total_tokens": engine.stats.total_tokens,
+                    "total_cost": engine.stats.total_cost,
+                },
+            }
+
+            # 获取当前任务信息
+            current_task_index = None
+            if hasattr(engine, 'planner') and engine.planner:
+                # 尝试获取当前任务索引
+                if hasattr(engine.planner, '_task_index'):
+                    current_task_index = engine.planner._task_index
+
+            await self._storage.update_engine_state(
+                session_id=session_id,
+                engine_state=state,
+                current_task_index=current_task_index,
+                is_resumable=True,
+            )
+
+            logger.debug(f"Saved engine state for session {session_id}")
+        except Exception as e:
+            logger.error(f"Failed to save engine state for {session_id}: {e}")
+
+    async def get_or_restore_engine(
+        self,
+        session_id: str,
+        llm_client: Any,
+        memory: Any,
+        evaluator: Any,
+    ) -> Optional[LoopEngine]:
+        """
+        获取已注册的引擎，或从数据库恢复引擎状态
+
+        Args:
+            session_id: 会话ID
+            llm_client: LLM客户端（用于创建新引擎）
+            memory: 记忆管理器（用于创建新引擎）
+            evaluator: 评估器（用于创建新引擎）
+
+        Returns:
+            LoopEngine 实例或 None
+        """
+        # 首先检查内存中是否有引擎
+        engine = self.get(session_id)
+        if engine:
+            logger.info(f"Found engine in memory for session {session_id}")
+            return engine
+
+        # 尝试从数据库恢复
+        if self._storage:
+            session_data = await self._storage.get_session(session_id)
+            if session_data and session_data.get("is_resumable", False):
+                logger.info(f"Restoring engine state from database for session {session_id}")
+                # 这里可以返回恢复信息，让调用者决定如何处理
+                # 实际的引擎恢复需要在 API 层处理，因为需要重新创建 LoopEngine
+
+        return None
+
+    async def restore_session_on_startup(self) -> int:
+        """
+        启动时恢复所有可恢复的会话
+
+        Returns:
+            恢复的会话数量
+        """
+        if not self._storage:
+            logger.warning("No storage set, cannot restore sessions")
+            return 0
+
+        try:
+            resumable_sessions = await self._storage.get_resumable_sessions()
+            count = len(resumable_sessions)
+
+            if count > 0:
+                logger.info(f"Found {count} resumable sessions in database")
+                for session in resumable_sessions:
+                    logger.info(
+                        f"  - Session {session['id']}: {session['title']} "
+                        f"(status: {session['status']})"
+                    )
+                    # 标记为不可恢复，直到用户主动恢复
+                    await self._storage.update_engine_state(
+                        session_id=session['id'],
+                        is_resumable=False,
+                    )
+            else:
+                logger.info("No resumable sessions found")
+
+            return count
+        except Exception as e:
+            logger.error(f"Error restoring sessions on startup: {e}")
+            return 0
 
 
 # Global singleton instance

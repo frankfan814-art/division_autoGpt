@@ -46,13 +46,13 @@ export const useToast = () => {
 
   return {
     success: (message: string, duration?: number) =>
-      addToast({ type: 'success', message, duration }),
+      addToast({ type: 'success', message, duration: duration ?? 10000 }),  // 🔥 默认10秒
     error: (message: string, duration?: number) =>
-      addToast({ type: 'error', message, duration }),
+      addToast({ type: 'error', message, duration: duration ?? 15000 }),  // 🔥 默认15秒（错误信息需要更长时间阅读）
     warning: (message: string, duration?: number) =>
-      addToast({ type: 'warning', message, duration }),
+      addToast({ type: 'warning', message, duration: duration ?? 12000 }),  // 🔥 默认12秒
     info: (message: string, duration?: number) =>
-      addToast({ type: 'info', message, duration }),
+      addToast({ type: 'info', message, duration: duration ?? 10000 }),  // 🔥 默认10秒
   };
 };
 

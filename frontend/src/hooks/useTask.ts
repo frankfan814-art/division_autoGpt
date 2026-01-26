@@ -8,7 +8,7 @@ import { sessionsApi } from '@/api/client';
 import { useTaskStore } from '@/stores/taskStore';
 
 export const useTasks = (sessionId: string, params?: { task_type?: string; chapter_index?: number }) => {
-  const { tasks: storeTasks, upsertTask, setLoading, setError } = useTaskStore();
+  const { getTasks, upsertTask, setLoading, setError } = useTaskStore();  // 🔥 修复：使用 getTasks
 
   const { data: tasks, isLoading, error, refetch } = useQuery({
     queryKey: ['tasks', sessionId, params],
@@ -16,6 +16,8 @@ export const useTasks = (sessionId: string, params?: { task_type?: string; chapt
     enabled: !!sessionId,
     staleTime: 3000,
   });
+
+  const storeTasks = getTasks();  // 🔥 获取当前会话任务
 
   useEffect(() => {
     console.log('📦 useTasks received from API:', tasks?.length || 0, 'tasks');
@@ -43,7 +45,7 @@ export const useTaskProgress = (_sessionId: string) => {
 
   // Progress is now updated via WebSocket (through useWebSocket hook)
   // No need for HTTP polling anymore
-  
+
   return {
     progress,
     isLoading: false,
@@ -54,7 +56,7 @@ export const useTaskProgress = (_sessionId: string) => {
 
 // Helper hook for filtering tasks
 export const useFilteredTasks = () => {
-  const tasks = useTaskStore((state) => state.tasks);
+  const tasks = useTaskStore((state) => state.getTasks());  // 🔥 修复：使用 getTasks()
 
   const getTasksByChapter = useCallback((chapterIndex: number) => {
     return tasks.filter((t) => t.chapter_index === chapterIndex);

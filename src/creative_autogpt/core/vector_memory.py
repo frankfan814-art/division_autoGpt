@@ -11,7 +11,7 @@ novel writing with support for:
 
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Set
 from collections import deque
 
 from loguru import logger
@@ -22,6 +22,17 @@ from creative_autogpt.storage.vector_store import (
     MemoryType,
     SearchResult,
 )
+
+
+# 🔥 任务类型到所需上下文类型的映射
+TASK_CONTEXT_MAPPING: Dict[str, Set[str]] = {
+    "伏笔列表": {"大纲", "世界观规则", "事件", "人物设计", "场景物品冲突"},
+    "章节大纲": {"大纲", "世界观规则", "事件", "人物设计", "伏笔列表", "场景物品冲突"},
+    "场景生成": {"章节大纲", "大纲", "人物设计", "世界观规则", "事件"},
+    "章节内容": {"大纲", "世界观规则", "事件", "人物设计", "伏笔列表", "场景物品冲突", "章节大纲", "场景生成"},
+    "章节润色": {"大纲", "世界观规则", "事件", "人物设计", "伏笔列表", "场景物品冲突", "章节大纲", "场景生成", "章节内容"},
+    "润色": {"大纲", "世界观规则", "事件", "人物设计", "伏笔列表", "场景物品冲突", "章节大纲", "场景生成", "章节内容"},
+}
 
 
 @dataclass
@@ -207,28 +218,86 @@ class VectorMemoryManager:
         recent = list(self._short_term)[-recent_count:]
         context.recent_results = [r.to_dict() for r in recent if r.task_id != task_id]
 
-        # 2. Semantically relevant memories
-        search_query = query or task_type
-        relevant_results = await self.vector_store.search(
-            query=search_query,
-            top_k=top_k,
-            chapter_index=chapter_index if include_chapter_context else None,
-        )
-        context.relevant_memories = [
-            {
-                "content": r.item.content,
-                "memory_type": r.item.memory_type.value,
-                "score": r.score,
-                "task_id": r.item.task_id,
-            }
-            for r in relevant_results
-            if r.item.task_id != task_id
-        ]
+        # 🔥 2. 根据任务类型检索特定上下文
+        required_context_types = TASK_CONTEXT_MAPPING.get(task_type, None)
+
+        if required_context_types:
+            # 🔥 新逻辑：根据映射检索特定任务类型的内容
+            logger.info(f"🔍 为任务 {task_type} 检索特定上下文: {required_context_types}")
+
+            for context_type in required_context_types:
+                # 从短期内存中查找匹配的任务类型
+                matching_results = []
+                for result in self._short_term:
+                    if result.task_id != task_id and result.task_type == context_type:
+                        matching_results.append({
+                            "content": result.content,
+                            "memory_type": result.memory_type.value,
+                            "task_id": result.task_id,
+                            "task_type": result.task_type,
+                        })
+
+                # 如果短期内存中没有，从向量存储中搜索
+                if not matching_results:
+                    try:
+                        search_results = await self.vector_store.search(
+                            query=context_type,  # 使用任务类型作为查询
+                            top_k=3,
+                        )
+                        matching_results = [
+                            {
+                                "content": r.item.content,
+                                "memory_type": r.item.memory_type.value,
+                                "task_id": r.item.task_id,
+                                "task_type": r.item.task_type,  # 添加任务类型
+                                "score": r.score,
+                            }
+                            for r in search_results
+                            if r.item.task_type == context_type and r.item.task_id != task_id
+                        ]
+                    except Exception as e:
+                        logger.warning(f"搜索 {context_type} 上下文失败: {e}")
+
+                # 添加到相关记忆中
+                if matching_results:
+                    context.relevant_memories.extend(matching_results)
+                    logger.debug(f"✅ 找到 {len(matching_results)} 个 {context_type} 上下文")
+                else:
+                    logger.warning(f"⚠️ 未找到 {context_type} 上下文")
+
+            # 去重（按 task_id）
+            seen_ids = set()
+            unique_memories = []
+            for memory in context.relevant_memories:
+                memory_id = memory.get("task_id") or memory.get("content", "")[:100]
+                if memory_id not in seen_ids:
+                    seen_ids.add(memory_id)
+                    unique_memories.append(memory)
+
+            context.relevant_memories = unique_memories[:top_k * 2]  # 限制数量
+        else:
+            # 🔥 原逻辑：如果没有特定映射，使用语义搜索
+            search_query = query or task_type
+            relevant_results = await self.vector_store.search(
+                query=search_query,
+                top_k=top_k,
+                chapter_index=chapter_index if include_chapter_context else None,
+            )
+            context.relevant_memories = [
+                {
+                    "content": r.item.content,
+                    "memory_type": r.item.memory_type.value,
+                    "score": r.score,
+                    "task_id": r.item.task_id,
+                }
+                for r in relevant_results
+                if r.item.task_id != task_id
+            ]
 
         # 3. Chapter-specific context
         if include_chapter_context and chapter_index is not None:
             chapter_results = await self.vector_store.search(
-                query=search_query,
+                query=task_type,
                 top_k=3,
                 chapter_index=chapter_index,
             )
@@ -245,11 +314,10 @@ class VectorMemoryManager:
         if task_id in self._task_results:
             context.task_memories = [self._task_results[task_id].to_dict()]
 
-        logger.debug(
-            f"Retrieved context for task {task_id}: "
+        logger.info(
+            f"📊 上下文检索完成 for {task_type}: "
             f"{len(context.recent_results)} recent, "
-            f"{len(context.relevant_memories)} relevant, "
-            f"{len(context.chapter_context)} chapter"
+            f"{len(context.relevant_memories)} relevant"
         )
 
         return context

@@ -2,10 +2,72 @@
  * PreviewPanel component for displaying task results in tabs
  */
 
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
+
+// 🔥 实时计时器组件
+function RunningTimer({ taskStartTime }: { taskStartTime: string }) {
+  const [elapsed, setElapsed] = useState(0);
+
+  useEffect(() => {
+    // 🔥 处理时区问题：确保正确解析 ISO 时间字符串
+    let startTime: number;
+
+    try {
+      // 如果时间字符串包含 Z 或时区，直接解析
+      if (taskStartTime.includes('Z') || taskStartTime.includes('+') || taskStartTime.includes('T')) {
+        startTime = new Date(taskStartTime).getTime();
+      } else {
+        // 如果没有时区信息，假设是 UTC 时间
+        startTime = new Date(taskStartTime + 'Z').getTime();
+      }
+    } catch (e) {
+      // 如果解析失败，使用当前时间
+      console.error('Failed to parse task start time:', taskStartTime, e);
+      startTime = Date.now();
+    }
+
+    const updateTime = () => {
+      const now = Date.now();
+      const diff = (now - startTime) / 1000;
+      // 避免负数（时区问题可能导致）
+      setElapsed(Math.max(0, diff));
+    };
+
+    // 立即更新一次
+    updateTime();
+
+    // 每秒更新
+    const interval = setInterval(updateTime, 1000);
+    return () => clearInterval(interval);
+  }, [taskStartTime]);
+
+  const formatTime = (seconds: number) => {
+    if (seconds < 60) {
+      return `${seconds.toFixed(1)}秒`;
+    } else if (seconds < 3600) {
+      const mins = Math.floor(seconds / 60);
+      const secs = Math.floor(seconds % 60);
+      return `${mins}分${secs}秒`;
+    } else {
+      const hours = Math.floor(seconds / 3600);
+      const mins = Math.floor((seconds % 3600) / 60);
+      const secs = Math.floor(seconds % 60);
+      return `${hours}小时${mins}分${secs}秒`;
+    }
+  };
+
+  return (
+    <div className="flex items-center gap-1.5 text-sm">
+      <span className="text-blue-600">⏱️</span>
+      <span className="font-mono font-medium text-blue-700">{formatTime(elapsed)}</span>
+    </div>
+  );
+}
+
 import ReactMarkdown from 'react-markdown';
 import { Badge } from './ui/Badge';
 import { Button } from './ui/Button';
+import { StepProgress } from './StepProgress';
 import { useTaskStore } from '@/stores/taskStore';
 import { Task } from '@/types';
 import { getWebSocketClient } from '@/api/websocket';
@@ -21,7 +83,15 @@ const COMPACT_MODE_THRESHOLD = 8;
 const AUTO_APPROVE_TIMEOUT = 10;
 
 export const PreviewPanel = ({ sessionId }: PreviewPanelProps) => {
-  const tasks = useTaskStore((state) => state.tasks);
+  const tasks = useTaskStore((state) => state.getTasks());  // 🔥 修复：使用 getTasks() 获取当前会话任务
+
+  // 🔥 使用 useMemo 创建稳定的依赖项，避免无限循环
+  const taskIds = useMemo(() => tasks.map(t => t.task_id).join(','), [tasks]);
+  const pendingApprovalTaskId = useMemo(() => {
+    const t = tasks.find(t => t.status === 'pending_approval');
+    return t?.task_id || null;
+  }, [tasks]);
+
   const [activeTaskId, setActiveTaskId] = useState<string | null>(null);
   const [showEvaluation, setShowEvaluation] = useState(false);
   const [showTaskList, setShowTaskList] = useState(false);
@@ -58,12 +128,12 @@ export const PreviewPanel = ({ sessionId }: PreviewPanelProps) => {
   // 自动审核计时器
   useEffect(() => {
     const pendingTask = tasks.find(t => t.status === 'pending_approval');
-    
+
     if (pendingTask) {
       // 🎯 创意脑暴任务需要用户选择点子，不允许自动通过
       const isBrainstormTask = pendingTask.task_type === '创意脑暴';
       const requiresSelection = isBrainstormTask || pendingTask.metadata?.requires_selection;
-      
+
       if (requiresSelection) {
         // 创意脑暴任务：禁用自动通过，必须等待用户选择
         setAutoApproveCountdown(null);
@@ -73,10 +143,10 @@ export const PreviewPanel = ({ sessionId }: PreviewPanelProps) => {
         }
         return;
       }
-      
+
       // 其他任务：开始倒计时
       setAutoApproveCountdown(AUTO_APPROVE_TIMEOUT);
-      
+
       autoApproveTimerRef.current = setInterval(() => {
         setAutoApproveCountdown(prev => {
           if (prev === null || prev <= 1) {
@@ -89,7 +159,7 @@ export const PreviewPanel = ({ sessionId }: PreviewPanelProps) => {
           return prev - 1;
         });
       }, 1000);
-      
+
       return () => {
         if (autoApproveTimerRef.current) {
           clearInterval(autoApproveTimerRef.current);
@@ -104,28 +174,37 @@ export const PreviewPanel = ({ sessionId }: PreviewPanelProps) => {
       }
       setAutoApproveCountdown(null);
     }
-  }, [tasks, handleApproveTask]);
+    // 🔥 使用稳定的依赖项：pendingApprovalTaskId 而不是 tasks
+  }, [pendingApprovalTaskId, handleApproveTask]);
 
-  // Auto-select the latest running or completed task
+  // Auto-select the latest running or completed task (only on initial load or when tasks first appear)
   useEffect(() => {
+    // 只有在当前没有选中任务，且任务列表从空变为有数据时才自动选择
     if (tasks.length > 0 && !activeTaskId) {
       // Find the latest running or completed task
       const latestTask = [...tasks]
         .reverse()
         .find(t => t.status === 'running' || t.status === 'completed' || t.status === 'pending_approval');
       if (latestTask) {
+        console.log('🎯 Auto-selecting initial task:', latestTask.task_type);
         setActiveTaskId(latestTask.task_id);
       }
     }
-  }, [tasks, activeTaskId]);
+  // 🔥 只在 tasks.length 变化时触发，不包括 activeTaskId，避免覆盖用户选择
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tasks.length]);
 
-  // Auto-switch to newly started task
+  // Auto-switch to newly started task (but don't override user's manual selection)
   useEffect(() => {
     const runningTask = tasks.find(t => t.status === 'running');
-    if (runningTask && runningTask.task_id !== activeTaskId) {
+    // 只有当有运行中的任务，且当前没有选中任务，或选中的任务不是运行中的任务时才切换
+    if (runningTask && (!activeTaskId || !tasks.find(t => t.task_id === activeTaskId && t.status === 'running'))) {
+      console.log('🔄 Auto-switching to running task:', runningTask.task_type);
       setActiveTaskId(runningTask.task_id);
     }
-  }, [tasks]);
+  // 🔥 只在任务状态变化时检查，避免频繁触发
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [taskIds]);
 
   // Close dropdown when clicking outside
   useEffect(() => {
@@ -334,14 +413,37 @@ export const PreviewPanel = ({ sessionId }: PreviewPanelProps) => {
 
               {/* Evaluation Summary */}
               {activeTask.evaluation && (
-                <div className="flex items-center gap-4 text-sm">
-                  <span className={`font-semibold ${
-                    activeTask.evaluation.score >= 0.9 ? 'text-green-600' :
-                    activeTask.evaluation.score >= 0.7 ? 'text-yellow-600' :
-                    'text-red-600'
-                  }`}>
-                    评分: {(activeTask.evaluation.score * 100).toFixed(0)}/100
-                  </span>
+                <div className="flex items-center gap-4 text-sm flex-wrap">
+                  {/* 🔥 质量评分 */}
+                  {activeTask.evaluation.quality_score !== undefined ? (
+                    <span className={`font-semibold ${
+                      activeTask.evaluation.quality_score >= 0.8 ? 'text-green-600' :
+                      activeTask.evaluation.quality_score >= 0.6 ? 'text-yellow-600' :
+                      'text-red-600'
+                    }`}>
+                      📈 质量: {(activeTask.evaluation.quality_score * 10).toFixed(1)}/10
+                    </span>
+                  ) : (
+                    <span className={`font-semibold ${
+                      activeTask.evaluation.score >= 0.9 ? 'text-green-600' :
+                      activeTask.evaluation.score >= 0.7 ? 'text-yellow-600' :
+                      'text-red-600'
+                    }`}>
+                      评分: {(activeTask.evaluation.score * 100).toFixed(0)}/100
+                    </span>
+                  )}
+
+                  {/* 🔥 一致性评分 */}
+                  {activeTask.evaluation.consistency_score !== undefined && (
+                    <span className={`font-semibold ${
+                      activeTask.evaluation.consistency_score >= 0.8 ? 'text-green-600' :
+                      activeTask.evaluation.consistency_score >= 0.6 ? 'text-yellow-600' :
+                      'text-red-600'
+                    }`}>
+                      🔍 一致性: {(activeTask.evaluation.consistency_score * 10).toFixed(1)}/10
+                    </span>
+                  )}
+
                   <span className={activeTask.evaluation.passed ? 'text-green-600' : 'text-red-600'}>
                     {activeTask.evaluation.passed ? '✓ 通过' : '✗ 未通过'}
                   </span>
@@ -534,11 +636,19 @@ export const PreviewPanel = ({ sessionId }: PreviewPanelProps) => {
                 })()}
               </div>
             ) : activeTask.status === 'running' ? (
-              <div className="flex items-center justify-center py-12 text-gray-400">
-                <div className="text-center">
-                  <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto mb-3"></div>
-                  <p>正在生成中...</p>
+              <div className="py-6">
+                {/* 🔥 任务运行时显示实时计时器 */}
+                <div className="mb-4 p-3 bg-blue-50 border border-blue-200 rounded-lg">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <div className="animate-spin w-4 h-4 border-2 border-blue-600 border-t-transparent rounded-full"></div>
+                      <span className="text-sm font-medium text-blue-700">任务执行中...</span>
+                    </div>
+                    <RunningTimer taskStartTime={activeTask.created_at} />
+                  </div>
                 </div>
+                {/* 🔥 显示详细步骤进度 */}
+                <StepProgress />
               </div>
             ) : (
               <div className="flex items-center justify-center py-12 text-gray-400">

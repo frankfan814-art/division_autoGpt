@@ -62,7 +62,7 @@ class SessionResponse(BaseModel):
 class SessionListResponse(BaseModel):
     """Schema for session list response"""
 
-    sessions: List[SessionResponse]
+    items: List[SessionResponse]
     total: int
     page: int
     page_size: int

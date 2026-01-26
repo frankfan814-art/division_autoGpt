@@ -486,20 +486,15 @@ class MultiLLMClient:
         "worldview": LLMProvider.ALIYUN,
         "世界观": LLMProvider.ALIYUN,
 
-        # Logic tasks → DeepSeek (strong reasoning, cost-effective)
-        "事件": LLMProvider.DEEPSEEK,
-        "events": LLMProvider.DEEPSEEK,
-        "场景物品冲突": LLMProvider.DEEPSEEK,
-        "scenes_items_conflicts": LLMProvider.DEEPSEEK,
-        "场景": LLMProvider.DEEPSEEK,
-        "评估": LLMProvider.DEEPSEEK,
-        "evaluation": LLMProvider.DEEPSEEK,
-        "一致性检查": LLMProvider.DEEPSEEK,
-        "consistency_check": LLMProvider.DEEPSEEK,
-        "时间线检查": LLMProvider.DEEPSEEK,
-        "timeline_check": LLMProvider.DEEPSEEK,
-        "伏笔列表": LLMProvider.DEEPSEEK,
-        "foreshadow_list": LLMProvider.DEEPSEEK,
+        # Logic tasks → Qwen (将 DeepSeek 改为 Qwen，降低成本)
+        "事件": LLMProvider.ALIYUN,
+        "events": LLMProvider.ALIYUN,
+        "场景物品冲突": LLMProvider.ALIYUN,
+        "scenes_items_conflicts": LLMProvider.ALIYUN,
+        "场景": LLMProvider.ALIYUN,
+        "评估": LLMProvider.ALIYUN,  # ⚠️ Qwen 评估可能更严格
+        "evaluation": LLMProvider.ALIYUN,
+        # 注：一致性检查已合并到评估任务中
 
         # Creative tasks → Doubao (literary quality)
         "章节内容": LLMProvider.ARK,

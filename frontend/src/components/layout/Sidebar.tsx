@@ -9,7 +9,6 @@ import {
   LayoutDashboard,
   ListTodo,
   Eye,
-  BookOpen,
   ArrowLeft,
   Sparkles,
   Clock,
@@ -42,6 +41,8 @@ export const Sidebar = ({ className = '' }: SidebarProps) => {
   const statusInfo = statusConfig[currentStatus as keyof typeof statusConfig] || statusConfig.created;
   const StatusIcon = statusInfo.icon;
 
+  // 侧边栏菜单：总览、预览、任务列表
+  // 阅读模式从会话列表直接进入，不在侧边栏显示
   const navItems = [
     {
       id: 'overview',
@@ -50,23 +51,17 @@ export const Sidebar = ({ className = '' }: SidebarProps) => {
       path: `/workspace/${sessionId}`,
     },
     {
+      id: 'preview',
+      label: '预览',
+      icon: Eye,
+      path: `/workspace/${sessionId}/preview`,
+    },
+    {
       id: 'tasks',
       label: '任务列表',
       icon: ListTodo,
       path: `/workspace/${sessionId}/tasks`,
       badge: totalTasks > 0 ? `${completedTasks}/${totalTasks}` : undefined,
-    },
-    {
-      id: 'preview',
-      label: '内容预览',
-      icon: Eye,
-      path: `/workspace/${sessionId}/preview`,
-    },
-    {
-      id: 'reader',
-      label: '阅读模式',
-      icon: BookOpen,
-      path: `/workspace/${sessionId}/reader`,
     },
   ];
 

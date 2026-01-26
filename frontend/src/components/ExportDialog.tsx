@@ -14,21 +14,21 @@ interface ExportDialogProps {
 }
 
 const formatOptions = [
+  { value: 'full', label: '完整创作过程（推荐）' },
   { value: 'txt', label: '纯文本 (.txt)' },
   { value: 'md', label: 'Markdown (.md)' },
-  { value: 'docx', label: 'Word 文档 (.docx)' },
-  { value: 'pdf', label: 'PDF 文档 (.pdf)' },
+  { value: 'json', label: 'JSON 数据 (.json)' },
 ];
 
 export const ExportDialog = ({ sessionId, isOpen, onClose }: ExportDialogProps) => {
-  const [format, setFormat] = useState<ExportFormat>('txt');
-  const [includeEvaluation, setIncludeEvaluation] = useState(false);
+  const [format, setFormat] = useState<ExportFormat>('full');
+  const [includeMetadata, setIncludeMetadata] = useState(true);  // 🔥 修复：参数名改为 includeMetadata
   const { exportSession, isExporting } = useExport();
 
   if (!isOpen) return null;
 
   const handleExport = () => {
-    exportSession({ sessionId, format, includeEvaluation });
+    exportSession({ sessionId, format, includeMetadata });
     onClose();
   };
 
@@ -48,13 +48,13 @@ export const ExportDialog = ({ sessionId, isOpen, onClose }: ExportDialogProps) 
           <div className="flex items-center">
             <input
               type="checkbox"
-              id="include-evaluation"
-              checked={includeEvaluation}
-              onChange={(e) => setIncludeEvaluation(e.target.checked)}
+              id="include-metadata"
+              checked={includeMetadata}
+              onChange={(e) => setIncludeMetadata(e.target.checked)}
               className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
             />
-            <label htmlFor="include-evaluation" className="ml-2 text-sm text-gray-700">
-              包含质量评估信息
+            <label htmlFor="include-metadata" className="ml-2 text-sm text-gray-700">
+              包含创作目标元数据
             </label>
           </div>
 

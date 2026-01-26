@@ -47,6 +47,7 @@ function App() {
               <Route path="overview" element={<Overview />} />
               <Route path="tasks" element={<Tasks />} />
               <Route path="preview" element={<Preview />} />
+              {/* Reader is accessed directly from session list, not in sidebar */}
               <Route path="reader" element={<Reader />} />
             </Route>
 

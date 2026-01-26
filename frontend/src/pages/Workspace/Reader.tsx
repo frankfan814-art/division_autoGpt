@@ -1,16 +1,23 @@
 /**
- * Reader page for workspace
+ * Reader page - 独立的阅读页面，从会话列表点击阅读直接进入
  */
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useParams } from 'react-router-dom';
 import { usePreview } from '@/hooks/usePreview';
 import { useTaskProgress } from '@/hooks/useTask';
+import { useTasks } from '@/hooks/useTask';  // 🔥 新增：用于加载任务数据
 import { Button } from '@/components/ui/Button';
+import { useTaskStore } from '@/stores/taskStore';
 
 export const Reader = () => {
   const { sessionId } = useParams<{ sessionId: string }>();
   const { progress } = useTaskProgress(sessionId!);
+  const setCurrentSession = useTaskStore((state) => state.setCurrentSession);
+
+  // 🔥 关键修复：主动加载当前会话的任务数据
+  const { isLoading: tasksLoading } = useTasks(sessionId!);
+
   const {
     outline,
     currentChapter,
@@ -22,10 +29,30 @@ export const Reader = () => {
 
   const [showOutline, setShowOutline] = useState(false);
 
+  // 🔥 设置当前会话到 taskStore
+  useEffect(() => {
+    if (sessionId) {
+      console.log('🔄 Reader: Setting current session:', sessionId);
+      setCurrentSession(sessionId);
+    }
+  }, [sessionId, setCurrentSession]);
+
+  // 🔥 加载状态指示
+  if (tasksLoading) {
+    return (
+      <div className="h-full flex items-center justify-center bg-gray-900">
+        <div className="text-center text-gray-400">
+          <div className="animate-spin text-4xl mb-4">⏳</div>
+          <p>正在加载内容...</p>
+        </div>
+      </div>
+    );
+  }
+
   if (!sessionId) {
     return (
-      <div className="h-full flex items-center justify-center text-gray-400">
-        请选择一个会话
+      <div className="h-full flex items-center justify-center bg-gray-900">
+        <div className="text-gray-400">请选择一个会话</div>
       </div>
     );
   }
@@ -125,7 +152,7 @@ export const Reader = () => {
                 </div>
               ) : (
                 <div className="text-center py-20 text-gray-500">
-                  {progress?.status === 'running' ? '正在生成内容...' : '等待内容生成...'}
+                  该章节内容尚未生成
                 </div>
               )}
             </div>
@@ -133,9 +160,9 @@ export const Reader = () => {
             <div className="h-full flex items-center justify-center">
               <div className="text-center text-gray-500">
                 <div className="text-6xl mb-4">📖</div>
-                <p className="text-lg">等待内容生成...</p>
+                <p className="text-lg">暂无章节内容</p>
                 {progress?.status === 'running' && (
-                  <p className="text-sm mt-2">AI正在创作中</p>
+                  <p className="text-sm mt-2">AI正在创作中...</p>
                 )}
               </div>
             </div>

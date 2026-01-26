@@ -10,7 +10,7 @@ from enum import Enum
 from typing import Any, Dict, List, Optional
 
 from loguru import logger
-from sqlalchemy import Column, String, Integer, Text, DateTime, JSON, select, delete
+from sqlalchemy import Column, String, Integer, Text, DateTime, JSON, Boolean, select, delete
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
 from sqlalchemy.orm import declarative_base
 
@@ -50,6 +50,11 @@ class SessionModel(Base_Model):
     failed_tasks = Column(Integer, default=0)
     llm_calls = Column(Integer, default=0)
     tokens_used = Column(Integer, default=0)
+
+    # 引擎状态持久化字段（用于会话恢复）
+    engine_state = Column(JSON, nullable=True)  # 存储引擎状态信息
+    current_task_index = Column(Integer, nullable=True)  # 当前任务索引
+    is_resumable = Column(Boolean, default=True)  # 是否可以恢复
 
 
 class TaskResultModel(Base_Model):
@@ -488,6 +493,76 @@ class SessionStorage:
 
         logger.info(f"Created checkpoint {checkpoint_id} for session {session_id}")
         return checkpoint_id
+
+    async def update_engine_state(
+        self,
+        session_id: str,
+        engine_state: Optional[Dict[str, Any]] = None,
+        current_task_index: Optional[int] = None,
+        is_resumable: Optional[bool] = None,
+    ) -> bool:
+        """
+        Update engine state for session restoration
+
+        Args:
+            session_id: The session ID
+            engine_state: Engine state dict (包含执行状态、统计等)
+            current_task_index: Current task index
+            is_resumable: Whether session can be resumed
+
+        Returns:
+            True if successful
+        """
+        async with self.session_factory() as session:
+            result = await session.get(SessionModel, session_id)
+
+            if result:
+                if engine_state is not None:
+                    result.engine_state = engine_state
+                if current_task_index is not None:
+                    result.current_task_index = current_task_index
+                if is_resumable is not None:
+                    result.is_resumable = is_resumable
+
+                await session.commit()
+                return True
+
+        return False
+
+    async def get_resumable_sessions(self) -> List[Dict[str, Any]]:
+        """
+        Get all sessions that can be resumed
+
+        Returns:
+            List of resumable sessions
+        """
+        async with self.session_factory() as session:
+            stmt = select(SessionModel).where(
+                SessionModel.is_resumable == True,
+                SessionModel.status.in_([
+                    SessionStatus.RUNNING.value,
+                    SessionStatus.PAUSED.value,
+                ])
+            ).order_by(SessionModel.updated_at.desc())
+
+            result = await session.execute(stmt)
+            sessions = result.scalars().all()
+
+            return [
+                {
+                    "id": s.id,
+                    "title": s.title,
+                    "mode": s.mode,
+                    "status": s.status,
+                    "engine_state": s.engine_state,
+                    "current_task_index": s.current_task_index,
+                    "created_at": s.created_at.isoformat(),
+                    "updated_at": s.updated_at.isoformat(),
+                    "total_tasks": s.total_tasks,
+                    "completed_tasks": s.completed_tasks,
+                }
+                for s in sessions
+            ]
 
     async def close(self) -> None:
         """Close database connection"""
