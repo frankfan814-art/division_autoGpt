@@ -18,6 +18,11 @@ export interface Session {
   failed_tasks: number;
   llm_calls: number;
   tokens_used: number;
+  // 🔥 新增：重写状态字段
+  is_rewriting?: boolean;  // 是否正在重写
+  rewrite_attempt?: number;  // 当前重写尝试次数
+  rewrite_task_id?: string;  // 正在重写的任务 ID
+  rewrite_task_type?: string;  // 正在重写的任务类型
 }
 
 export type SessionStatus = 'created' | 'running' | 'paused' | 'completed' | 'failed' | 'cancelled';
@@ -85,6 +90,10 @@ export interface TaskProgress {
   retry_count?: number;  // 当前任务的重试次数
   task_started_at?: string; // 当前任务开始时间
   is_completed?: boolean; // 是否全部完成
+  // 🔥 新增：重写状态字段
+  is_rewriting?: boolean;  // 是否正在重写
+  rewrite_attempt?: number;  // 当前重写尝试次数
+  rewrite_task_type?: string;  // 正在重写的任务类型
 }
 
 // Chat types

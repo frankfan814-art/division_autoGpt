@@ -56,6 +56,12 @@ class SessionModel(Base_Model):
     current_task_index = Column(Integer, nullable=True)  # 当前任务索引
     is_resumable = Column(Boolean, default=True)  # 是否可以恢复
 
+    # 🔥 重写状态字段（用于前端显示重写进度）
+    is_rewriting = Column(Boolean, default=False)  # 是否正在重写
+    rewrite_attempt = Column(Integer, nullable=True)  # 当前重写尝试次数
+    rewrite_task_id = Column(String, nullable=True)  # 正在重写的任务 ID
+    rewrite_task_type = Column(String, nullable=True)  # 正在重写的任务类型
+
 
 class TaskResultModel(Base_Model):
     """SQLAlchemy model for task results"""
@@ -303,6 +309,45 @@ class SessionStorage:
                     result.llm_calls = llm_calls
                 if tokens_used is not None:
                     result.tokens_used = tokens_used
+
+                await session.commit()
+                return True
+
+        return False
+
+    async def update_session_rewrite_state(
+        self,
+        session_id: str,
+        is_rewriting: Optional[bool] = None,
+        rewrite_attempt: Optional[int] = None,
+        rewrite_task_id: Optional[str] = None,
+        rewrite_task_type: Optional[str] = None,
+    ) -> bool:
+        """
+        Update session rewrite state
+
+        Args:
+            session_id: The session ID
+            is_rewriting: Whether currently rewriting
+            rewrite_attempt: Current rewrite attempt number
+            rewrite_task_id: Task ID being rewritten
+            rewrite_task_type: Task type being rewritten
+
+        Returns:
+            True if successful
+        """
+        async with self.session_factory() as session:
+            result = await session.get(SessionModel, session_id)
+
+            if result:
+                if is_rewriting is not None:
+                    result.is_rewriting = is_rewriting
+                if rewrite_attempt is not None:
+                    result.rewrite_attempt = rewrite_attempt
+                if rewrite_task_id is not None:
+                    result.rewrite_task_id = rewrite_task_id
+                if rewrite_task_type is not None:
+                    result.rewrite_task_type = rewrite_task_type
 
                 await session.commit()
                 return True

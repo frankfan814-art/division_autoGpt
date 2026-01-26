@@ -16,6 +16,7 @@ from creative_autogpt.plugins.foreshadow import ForeshadowPlugin
 from creative_autogpt.plugins.timeline import TimelinePlugin
 from creative_autogpt.plugins.scene import ScenePlugin
 from creative_autogpt.plugins.dialogue import DialoguePlugin
+from creative_autogpt.plugins.example_extractor import ExampleExtractorPlugin
 
 __all__ = [
     "NovelElementPlugin",
@@ -31,4 +32,5 @@ __all__ = [
     "TimelinePlugin",
     "ScenePlugin",
     "DialoguePlugin",
+    "ExampleExtractorPlugin",
 ]

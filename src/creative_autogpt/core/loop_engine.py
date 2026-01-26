@@ -117,6 +117,7 @@ class LoopEngine:
         memory: VectorMemoryManager,
         evaluator: EvaluationEngine,
         config: Optional[Dict[str, Any]] = None,
+        session_storage = None,  # 🔥 添加 session_storage 参数（可选）
     ):
         """
         Initialize loop engine
@@ -127,12 +128,14 @@ class LoopEngine:
             memory: Vector memory manager
             evaluator: Quality evaluation engine
             config: Optional configuration
+            session_storage: Optional session storage for updating rewrite state
         """
         self.session_id = session_id
         self.llm_client = llm_client
         self.memory = memory
         self.evaluator = evaluator
         self.config = config or {}
+        self.session_storage = session_storage  # 🔥 保存 session_storage
 
         # Create task planner
         self.planner = TaskPlanner(config=config)
@@ -363,20 +366,26 @@ class LoopEngine:
                 task_id=task.task_id,
                 task_type=task.task_type.value
             )
+            # 🔥 针对章节内容任务，增加 recent_count 确保能获取前几章内容
+            task_type = task.task_type.value
+            recent_count = 10 if task_type == "章节内容" else 3  # 章节内容需要更多历史上下文
+
             context = await self.memory.get_context(
                 task_id=task.task_id,
-                task_type=task.task_type.value,
+                task_type=task_type,
                 chapter_index=task.metadata.get("chapter_index"),
+                recent_count=recent_count,
             )
 
             # 🔥 发送上下文检索完成事件
-            context_types = list(set(r.get("task_type", "unknown") for r in context.recent_results[:5]))
+            # 使用 relevant_memories（按任务类型映射检索的）而不是 recent_results（按时间顺序的）
+            context_types = list(set(r.get("task_type", "unknown") for r in context.relevant_memories[:5]))
             await self._send_step_progress(
                 step="context_retrieval_complete",
-                message=f"✅ 上下文检索完成 (检索到 {len(context.recent_results)} 条相关内容)",
+                message=f"✅ 上下文检索完成 (检索到 {len(context.relevant_memories)} 条相关内容)",
                 task_id=task.task_id,
                 task_type=task.task_type.value,
-                context_count=len(context.recent_results),
+                context_count=len(context.relevant_memories),
                 context_types=context_types
             )
 
@@ -593,6 +602,16 @@ class LoopEngine:
                     consistency_score=consistency_score
                 )
 
+                # 🔥 更新 session 状态（标记为正在重写）
+                if self.session_storage:
+                    await self.session_storage.update_session_rewrite_state(
+                        session_id=self.session_id,
+                        is_rewriting=True,
+                        rewrite_attempt=1,
+                        rewrite_task_id=task.task_id,
+                        rewrite_task_type=task.task_type.value,
+                    )
+
                 # 🔥 传递当前的 token 统计用于累计
                 rewrite_token_stats = {
                     "total_tokens": task_total_tokens,
@@ -603,7 +622,7 @@ class LoopEngine:
 
                 # 🔥 添加 try-catch 处理重写失败
                 try:
-                    final_content, rewrite_token_stats = await self._attempt_rewrite(
+                    final_content, rewrite_token_stats, evaluation = await self._attempt_rewrite(
                         task=task,
                         content=response.content,
                         evaluation=evaluation,
@@ -619,6 +638,16 @@ class LoopEngine:
                 except Exception as rewrite_error:
                     # 🔥 重写失败，标记任务为失败并返回
                     logger.error(f"❌ 任务 {task.task_id} 重写失败: {rewrite_error}")
+
+                    # 🔥 更新 session 状态（清除重写状态）
+                    if self.session_storage:
+                        await self.session_storage.update_session_rewrite_state(
+                            session_id=self.session_id,
+                            is_rewriting=False,
+                            rewrite_attempt=None,
+                            rewrite_task_id=None,
+                            rewrite_task_type=None,
+                        )
 
                     task.status = "failed"
                     task.error = str(rewrite_error)
@@ -671,12 +700,13 @@ class LoopEngine:
             )
 
             # 7. Check if approval is needed
-            # 创意脑暴任务始终需要等待用户选择
-            requires_approval = self.approval_mode or task.task_type.value == "创意脑暴"
+            # 🔥 所有任务都需要手动审批（用户要一个一个审核）
+            # 创意脑暴任务需要等待用户选择点子
+            requires_approval = True  # 强制所有任务都需要审批
+            is_brainstorm = task.task_type.value == "创意脑暴"
             
             if requires_approval:
                 # 为创意脑暴添加特殊标记，告诉前端需要用户选择点子
-                is_brainstorm = task.task_type.value == "创意脑暴"
                 
                 logger.info(f"Task {task.task_id} waiting for approval" + 
                            (" (requires idea selection)" if is_brainstorm else ""))
@@ -765,6 +795,8 @@ class LoopEngine:
             task.metadata["completion_tokens"] = task.completion_tokens
             task.metadata["cost_usd"] = round(task.cost_usd, 6)
             task.metadata["failed_attempts"] = task.failed_attempts
+            # 🔥 添加完整提示词到 metadata（方便用户查看）
+            task.metadata["prompt"] = prompt
             
             self.planner.update_task_status(
                 task.task_id,
@@ -1770,14 +1802,16 @@ class LoopEngine:
 - 评估时会检查你与前置任务的**关联程度**
 
 """)
-        
-        # 按新的重要程度排序展示前置内容（故事核心最重要）
+
+        # 🔥 按重要程度排序展示前置内容
+        # 注意：实际显示哪些内容由 predecessor_contents 决定（基于依赖关系）
+        # priority_order 只决定显示顺序和标记
         priority_order = [
-            "创意脑暴", "故事核心",  # 最重要的根基
+            "故事核心",  # 🔴 最重要的根基（所有任务的锚点）
+            "大纲",  # 🔴 蓝图
             "人物设计", "世界观规则",  # 核心元素
             "主题确认", "风格元素", "市场定位",  # 风格定位
             "事件", "场景物品冲突", "伏笔列表",  # 情节元素
-            "大纲"  # 整合
         ]
         
         for task_name in priority_order:
@@ -1857,9 +1891,11 @@ class LoopEngine:
         sections.append(genre_guide)
 
         # Determine if this is a planning/analysis task or a content generation task
-        planning_tasks = ["风格元素", "主题确认", "市场定位"]
-        element_tasks = ["人物设计", "世界观规则", "事件设定", "场景物品冲突", "伏笔列表", "事件"]
-        content_tasks = ["大纲", "章节大纲", "章节内容", "场景生成", "章节润色"]
+        # 🔥 混合方案：正确分类任务类型
+        strategy_tasks = ["创意脑暴", "故事核心"]  # 🔴 策略规划任务 - 不直接写小说内容
+        planning_tasks = ["大纲", "风格元素", "主题确认", "市场定位"]  # 🔴 规划任务
+        element_tasks = ["人物设计", "世界观规则", "事件设定", "场景物品冲突", "伏笔列表", "事件"]  # 元素设计
+        content_tasks = ["批量章节生成", "章节大纲", "章节内容", "场景生成", "章节润色"]  # 内容创作
         
         # 通用的白话文写作风格要求（所有任务都适用）
         colloquial_style_guide = """
@@ -1895,7 +1931,27 @@ class LoopEngine:
 """
         
         # Build goal section based on task type
-        if task_type in planning_tasks:
+        if task_type in strategy_tasks:
+            # 🔴 策略规划任务 - 明确说明不是写小说内容
+            goal_section = f"""## 任务背景
+
+你正在为一部小说做**策略规划**工作。
+
+⚠️ **这是战略阶段，不是写作阶段！**
+- 你的任务是确定方向、规划结构、设计框架
+- **不要直接写小说内容**
+- **不要写章节、场景、对话等具体内容**
+- 要用规划性、分析性的语言
+
+{colloquial_style_guide}
+
+🎯 **核心原则**：
+1. 规划先于创作 - 先有蓝图，后有内容
+2. 结构优先 - 搭建好框架再填充细节
+3. 保持抽象 - 在这个阶段保持概念性，不要进入具体写作
+
+"""
+        elif task_type in planning_tasks:
             # Planning/analysis tasks - structured output
             goal_section = f"""## 任务背景
 
@@ -2002,23 +2058,67 @@ class LoopEngine:
         # Task-specific instruction based on task type
         # ============ Phase 0: 创意脑暴阶段 ============
         if task_type == "创意脑暴":
+            # 🔥 获取用户提供的基础设定
+            title = goal.get('title', '')
             genre = goal.get('genre', '科幻')
+            style = goal.get('style', '')
+            requirement = goal.get('requirement', '')
+            word_count = goal.get('word_count', 0)
+            chapter_count = goal.get('chapter_count', 0)
+
+            # 构建基础设定部分
+            foundation_info = ""
+            if title:
+                foundation_info += f"\n**项目标题**：{title}"
+            if genre:
+                foundation_info += f"\n**类型/流派**：{genre}"
+            if style:
+                foundation_info += f"\n**写作风格**：{style}"
+            if requirement:
+                foundation_info += f"\n**创作要求**：{requirement}"
+            if word_count:
+                if word_count >= 10000:
+                    foundation_info += f"\n**目标字数**：{word_count // 10000}万字"
+                else:
+                    foundation_info += f"\n**目标字数**：{word_count}字"
+            if chapter_count:
+                foundation_info += f"\n**章节数量**：{chapter_count}章"
+
             task_section = f"""
 ## 当前任务：{task_type} 🎯
 
 你现在是一个**顶级畅销小说家**，正在为新书进行创意脑暴。
 
-📌 **脑暴目标**：为一部{genre}小说产生 **4 个独特的故事点子**，并从中推荐最佳的一个
+---
+
+### ⚠️ 重要：基于用户提供的基础设定进行脑暴
+
+以下是本项目的**基础锚点**（所有点子都必须符合这些基础设定）：
+{foundation_info}
+
+🔴 **要求**：
+- 所有故事点子**必须保留**以上基础设定
+- 在这些基础设定上自由发挥，添加创意元素
+- 不要偏离标题、类型、风格等核心设定
+
+---
+
+### 📌 脑暴目标
+
+基于上述基础设定，产生 **4 个独特的故事点子**，并从中推荐最佳的一个
 
 ### 每个点子必须包含：
 
 1. **故事概念**（2-3句话）
+   - 基于「{title}」这个标题展开
    - 用"如果...会怎样"的方式描述
-   - 必须有一个独特的、吸引人的核心设定
+   - 必须体现「{style}」的写作风格
+   - 符合「{genre}」类型的设定
 
 2. **核心冲突**
    - 主角面对什么困境/挑战？
    - 什么东西阻止主角得到他想要的？
+   - 如何体现「{style}」的紧张感？
 
 3. **情感钩子**
    - 这个故事能触动读者什么情感？
@@ -2029,18 +2129,20 @@ class LoopEngine:
    - 一句话能让人记住的特点是什么？
 
 5. **潜力评估**（简短）
-   - 这个点子适合发展成多长的小说？
+   - 这个点子适合发展成{word_count // 10000 if word_count >= 10000 else word_count}字的小说吗？
    - 可能的受众是谁？
 
 ### 脑暴原则
 
 ✅ **要做到**：
+- 🔴 **必须基于用户提供的基础设定**：标题「{title}」、类型「{genre}」、风格「{style}」
 - 点子要大胆、新奇，不要老套
 - 每个点子之间要有差异性，不要太相似
 - 想想读者看到这个设定会不会眼前一亮
-- 考虑故事的"可展开性"——能支撑起完整的小说吗？
+- 考虑故事的"可展开性"——能支撑起{chapter_count}章、{word_count}字的完整小说吗？
 
 ❌ **要避免**：
+- 🚫 **不要偏离基础设定**：标题、类型、风格是锚点，不能改！
 - 不要写成长篇大纲，每个点子控制在 200-300 字
 - 不要学术化，用讲故事的语气
 - 不要太平庸，那种"一看就知道结局"的故事不要
@@ -2137,97 +2239,105 @@ class LoopEngine:
             task_section = f"""
 ## 当前任务：{task_type} 🎯
 
-你是一位畅销小说家，正在进行创作前最关键的一步：**确定故事核心**。
+你是一位**顶级小说家**，正在进行创作前最关键的一步：**确定故事核心**。
 
-> "每一个伟大的故事都可以用一句话概括。如果你做不到，说明你还不知道自己在写什么。" — 斯蒂芬·金
+> "如果你不能把故事用一句话讲清楚，说明你还不知道自己在写什么。" — 斯蒂芬·金
+
 {selected_idea_info}
----
-
-### 📌 任务说明
-
-基于用户在「创意脑暴」中**选择的点子**，将其打磨成完整的故事核心。
-
-⚠️ **这不是写章节内容！** 这是战略规划阶段，你要确定故事的"心脏"。
 
 ---
 
-### 🏆 顶级作家的故事核心法则
+### ⚠️ 故事核心的重要性
 
-**法则一：好故事必须能用一句话说清楚**
-- 《教父》：一个黑帮家族的继承人试图让家族合法化，却发现自己变成了比父亲更冷酷的人
-- 《三体》：人类发现宇宙并不友善，文明的生存需要做出残酷的选择
-- 《肖申克的救赎》：一个被冤枉的银行家用27年证明希望是关不住的
-
-**法则二：故事的动力来自"欲望+阻碍"**
-- 主角必须**极度渴望**某样东西
-- 必须有**强大的阻碍**让他得不到
-- 读者必须**在意**主角能否成功
-
-**法则三：真正抓住读者的是情感，不是设定**
-- 科幻设定再酷，没有情感就是技术文档
-- 读者记住的是人物的选择和牺牲，不是世界观
+**故事核心 = 整个故事的 DNA**
+- 如果核心不成立，整个故事就会垮掉
+- 必须**硬核、经得起推敲**
+- 所有后续创作（大纲、人物、章节）都基于这个核心
+- 一旦确定，不要轻易改动
 
 ---
 
-### 📋 请输出以下内容
+### 🔥 顶级作家的方法：3个要素
 
-#### 一、选择的点子回顾
+故事核心只有3个要素，缺一不可：
 
-1. **选中的点子**：[用户选择的点子编号及核心概念]
-2. **点子优势**：[这个点子的最大亮点是什么？用 2-3 句话说明]
+#### 要素1：主角是谁？
+**不是普通人！必须有缺陷和需求**
 
-#### 二、一句话故事（Logline）
+- **身份**：（一句话，比如"一个偏执的天才黑客"）
+- **表面欲望**：（故事层面，他想要什么？比如"揭露真相"）
+- **深层需求**：（主题层面，他真正需要什么？比如"学会信任他人"）
+- **致命缺陷**：（什么弱点会害他？比如"无法容忍被质疑"）
 
-用 **30字以内** 概括整个故事，格式：
-> "[主角是谁] 必须 [做什么]，否则 [会发生什么后果]，但 [面临什么阻碍]"
+❌ 错误示例：一个叫林默的年轻人（太平庸）
+✅ 正确示例：一个渴望被认可但害怕亲密关系的偏执天才
 
-写 2-3 个版本，然后选出最好的那个。
+---
 
-#### 三、故事引擎
+#### 要素2：什么在阻止他？
+**必须有真正的困境！不是假的冲突**
 
-**1. 主角核心**
-| 要素 | 内容 |
-|------|------|
-| 身份设定 | [简洁说明] |
-| 表面欲望 | [故事层面想要什么？] |
-| 深层需求 | [主题层面真正需要什么？] |
-| 致命缺陷 | [什么弱点会害他？] |
+- **外部障碍**：（谁/什么在阻止他？具体的反对力量）
+- **内心冲突**：（主角内心在纠结什么？两个欲望的冲突）
+- **赌注**：（如果失败会失去什么？必须够重！）
 
-**2. 核心冲突**
-- 外部障碍：[谁或什么在阻止主角？]
-- 内心挣扎：[主角内心在纠结什么？]
-- 赌注是什么：[如果失败会失去什么？这个后果要够重！]
+❌ 错误示例：有个坏人阻止他（太简单）
+✅ 正确示例：必须在拯救世界和拯救最爱的人之间做出选择
 
-**3. 冲突升级路径**（简述三幕）
-- **第一幕**：[打破平衡，进入冒险]
-- **第二幕**：[困难加剧，内外交困]
-- **第三幕**：[最终抉择，高潮收尾]
+---
 
-#### 四、读者体验设计
+#### 要素3：一句话概括（Logline）
+**30字以内，格式：**
 
-1. **情感承诺**：读者读这个故事会体验什么情感？（紧张？感动？震撼？）
-2. **核心悬念**：什么问题会让读者一直想知道答案？
-3. **共鸣点**：读者会在什么地方产生强烈代入感？
+> "[主角] + [必须做什么] + [否则会怎样] + [但面临什么阻碍]"
 
-#### 五、主题种子
+示例：
+- "一个偏执天才黑客必须阻止AI觉醒，否则人类将被消灭，但AI是他最爱的人的意识上传"
+- "一个渴望证明自己的外星混血必须拯救两个世界，否则都会毁灭，但两个世界都视她为异类"
 
-用一句话描述这个故事想探讨的人生问题：
-> "这是一个关于 ______ 的故事"
+---
 
-（例如：关于选择的代价 / 关于人性的复杂 / 关于爱与牺牲）
+### 📋 输出格式（严格按此格式）
+
+## 故事核心
+
+### 一、一句话概括（Logline）
+[30字以内]
+
+### 二、主角定义
+- **身份**：[一句话]
+- **表面欲望**：[他想要什么？]
+- **深层需求**：[他真正需要什么？]
+- **致命缺陷**：[什么会害他？]
+
+### 三、核心阻碍
+- **外部障碍**：[谁/什么阻止他？]
+- **内心冲突**：[他在纠结什么？]
+- **赌注**：[失败会失去什么？]
+
+---
+
+### ✅ 质量检查清单
+
+输出前请确认：
+- [ ] 主角**不是普通人**，有独特的缺陷和需求
+- [ ] 阻碍**足够强大**，主角不可能轻易达成目标
+- [ ] 赌注**够重**，失败后果严重
+- [ ] 一句话概括**清晰有力**
+- [ ] 整个核心**经得起推敲**，没有逻辑漏洞
 
 ---
 
 ### ❌ 禁止事项
 
-- **禁止写章节内容或正文**，这只是规划阶段
-- **禁止长篇大论**，每个部分简洁有力
-- **禁止空洞描述**，要具体，让人能"看到"这个故事
-- **禁止复制脑暴内容**，要在此基础上深化和聚焦
+- **禁止写章节内容或正文**
+- **禁止长篇大论**，保持简洁（200-300字）
+- **禁止空洞描述**，要具体可感
+- **禁止平庸设定**，主角和冲突都要独特
 
 ---
 
-📝 **输出长度**：800-1500字，清晰、结构化、有洞察力
+📝 **输出长度**：200-300字，精炼、硬核、有洞察力
 """
         elif task_type == "风格元素":
             genre = goal.get('genre', '')
@@ -4492,7 +4602,19 @@ class LoopEngine:
             logger.info(f"📌 为任务 {task_type} 添加了高分示例参考")
 
         # Output format instruction based on task type
-        if task_type in planning_tasks:
+        if task_type in strategy_tasks:
+            sections.append("""
+## 输出要求
+⚠️ **这是策略规划阶段，不是小说创作！**
+
+- 用简洁、概括性的语言
+- 明确核心要素，不要展开细节
+- 输出格式：结构化的要点列表
+- **不要写小说正文、对话、场景描写**
+- 保持抽象和战略层面的思考
+
+""")
+        elif task_type in planning_tasks:
             sections.append("""
 ## 输出要求
 - 使用结构化的格式输出（标题+内容）
@@ -4581,24 +4703,26 @@ class LoopEngine:
         evaluation: EvaluationResult,
         context: MemoryContext,
         goal: Dict[str, Any],
-        max_retries: int = 3,  # 🔥 修改为3次重试，避免无限循环
+        max_retries: int = 999,  # 🔥 取消限制，一直重写到通过为止
         token_stats: Dict[str, int] = None,  # 🔥 用于累计 token 统计
     ) -> tuple:
         """
         Attempt to rewrite content based on evaluation feedback until it passes
 
         Args:
-            max_retries: 最大重试次数，超过后抛出异常
+            max_retries: 最大重试次数（默认999，基本无限）
 
         Returns:
-            tuple: (final_content, token_stats_dict)
+            tuple: (final_content, token_stats_dict, evaluation)
+            final_content: 重写通过后的最终内容
             token_stats_dict 包含: total_tokens, prompt_tokens, completion_tokens, cost
+            evaluation: 通过评估的 EvaluationResult 对象
 
         Raises:
-            Exception: 重试次数用完后仍未通过评估
+            Exception: 重试999次后仍未通过评估（基本不会发生）
         """
 
-        logger.info(f"🔄 开始重写任务 {task.task_id}，直到评估通过为止")
+        logger.info(f"🔄 开始重写任务 {task.task_id}，直到评估通过为止（无限制重写）")
 
         # 初始化统计
         if token_stats is None:
@@ -4607,11 +4731,11 @@ class LoopEngine:
         attempt = 0
         current_content = content
         current_evaluation = evaluation
-        
+
         # 🔥 获取一致性检查结果（如果有的话）
         consistency_result = task.metadata.get("consistency_check_result", None)
-        
-        while attempt < max_retries:
+
+        while attempt < max_retries:  # 🔥 基本无限重写，直到通过
             attempt += 1
             logger.info(f"🔄 重写尝试 #{attempt} - 任务: {task.task_type.value}")
             
@@ -4707,7 +4831,17 @@ class LoopEngine:
                         consistency_score=new_consistency_score
                     )
 
-                    return response.content, token_stats
+                    # 🔥 更新 session 状态（重写完成）
+                    if self.session_storage:
+                        await self.session_storage.update_session_rewrite_state(
+                            session_id=self.session_id,
+                            is_rewriting=False,
+                            rewrite_attempt=None,
+                            rewrite_task_id=None,
+                            rewrite_task_type=None,
+                        )
+
+                    return response.content, token_stats, new_evaluation
 
                 # Update for next retry
                 current_content = response.content
@@ -4775,6 +4909,16 @@ class LoopEngine:
             consistency_score=consistency_score,
             error=error_msg
         )
+
+        # 🔥 更新 session 状态（重写失败）
+        if self.session_storage:
+            await self.session_storage.update_session_rewrite_state(
+                session_id=self.session_id,
+                is_rewriting=False,
+                rewrite_attempt=None,
+                rewrite_task_id=None,
+                rewrite_task_type=None,
+            )
 
         # 🔥 抛出异常，让任务执行器知道失败了
         raise Exception(error_msg)
@@ -4998,17 +5142,17 @@ class LoopEngine:
         """Get appropriate temperature for a task type"""
         # Creative tasks need higher temperature
         high_temp_tasks = {
-            NovelTaskType.CHAPTER_CONTENT,
-            NovelTaskType.SCENE_GENERATION,
+            NovelTaskType.CHAPTER_CONTENT,  # 逐章生成
+            # NovelTaskType.CHAPTER_POLISH,  # ⚠️ 已移除
             NovelTaskType.REVISION,
         }
 
         # Structured tasks need lower temperature
-        # 注：CONSISTENCY_CHECK 已合并到 EVALUATION
         low_temp_tasks = {
             NovelTaskType.OUTLINE,
             NovelTaskType.CHARACTER_DESIGN,
             NovelTaskType.WORLDVIEW_RULES,
+            NovelTaskType.STORY_CORE,
         }
 
         if task_type in high_temp_tasks:
@@ -5020,21 +5164,21 @@ class LoopEngine:
 
     def _get_max_tokens_for_task(self, task_type: NovelTaskType) -> int:
         """Get appropriate max tokens for a task type"""
-        # 章节内容需要最多 tokens
+        # 逐章生成需要较多 tokens
         if task_type == NovelTaskType.CHAPTER_CONTENT:
-            return 16000  # 约 12000 字中文
+            return 8000  # 约 6000 字中文（单章内容）
 
-        # 大纲需要最多 tokens，因为要规划所有章节
+        # 大纲需要较多 tokens
         elif task_type == NovelTaskType.OUTLINE:
             return 16000  # 约 12000 字中文，确保能输出所有章节
 
-        # 场景生成和章节大纲
-        elif task_type in {NovelTaskType.SCENE_GENERATION, NovelTaskType.CHAPTER_OUTLINE}:
-            return 8000  # 约 6000 字中文
+        # 章节润色需要较多 tokens
+        # elif task_type == NovelTaskType.CHAPTER_POLISH:  # ⚠️ 已移除
+        #     return 8000  # 约 6000 字中文
 
         # 规划类任务需要足够空间
         elif task_type in {NovelTaskType.CHARACTER_DESIGN, NovelTaskType.WORLDVIEW_RULES,
-                           NovelTaskType.EVENTS, NovelTaskType.SCENES_ITEMS_CONFLICTS, NovelTaskType.FORESHADOW_LIST}:
+                           NovelTaskType.CREATIVE_BRAINSTORM, NovelTaskType.STORY_CORE}:
             return 8000  # 约 6000 字中文
 
         # 其他任务
@@ -5135,7 +5279,7 @@ class LoopEngine:
 
     def _get_memory_type_for_task(self, task_type: NovelTaskType) -> MemoryType:
         """Map task type to memory type for storage
-        
+
         所有核心任务都需要被正确分类存储到向量数据库，
         方便后续章节创作时能够检索到相关内容。
         """
@@ -5143,29 +5287,17 @@ class LoopEngine:
             # 核心创意阶段 - 使用 GENERAL（最重要，会被频繁检索）
             NovelTaskType.CREATIVE_BRAINSTORM: MemoryType.GENERAL,
             NovelTaskType.STORY_CORE: MemoryType.GENERAL,
-            
+
             # 元素创建阶段
             NovelTaskType.CHARACTER_DESIGN: MemoryType.CHARACTER,
             NovelTaskType.WORLDVIEW_RULES: MemoryType.WORLDVIEW,
 
-            # 风格定位阶段
-            NovelTaskType.STYLE_ELEMENTS: MemoryType.GENERAL,
-
-            # 情节阶段
-            NovelTaskType.EVENTS: MemoryType.PLOT,
-            NovelTaskType.SCENES_ITEMS_CONFLICTS: MemoryType.SCENE,
-            NovelTaskType.FORESHADOW_LIST: MemoryType.FORESHADOW,
-            
-            # 大纲阶段
+            # 大纲阶段（包含事件、伏笔）
             NovelTaskType.OUTLINE: MemoryType.OUTLINE,
-            # 注：CONSISTENCY_CHECK 已合并到 EVALUATION
-            # NovelTaskType.CONSISTENCY_CHECK: MemoryType.GENERAL,
 
-            # 章节阶段
-            NovelTaskType.CHAPTER_OUTLINE: MemoryType.CHAPTER,
-            NovelTaskType.SCENE_GENERATION: MemoryType.SCENE,
+            # 章节生成阶段
             NovelTaskType.CHAPTER_CONTENT: MemoryType.CHAPTER,
-            NovelTaskType.CHAPTER_POLISH: MemoryType.CHAPTER,
+            # NovelTaskType.CHAPTER_POLISH: MemoryType.CHAPTER,  # ⚠️ 已移除
         }
 
         return mapping.get(task_type, MemoryType.GENERAL)

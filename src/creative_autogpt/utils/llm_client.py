@@ -226,7 +226,7 @@ class LLMClientBase(ABC):
 
         # All retries failed
         logger.error(f"❌ All {max_retries} retries failed for {self.provider.value}: {last_error}")
-        raise APIError(
+        raise Exception(
             f"All {max_retries} retries failed for {self.provider.value}: {last_error}"
         )
 
@@ -464,56 +464,61 @@ class MultiLLMClient:
     Multi-LLM client with intelligent task-type routing
 
     Routes different task types to the optimal LLM:
-    - Qwen (Aliyun): Planning, outlining, character design, worldview (long context)
-    - DeepSeek: Logic, evaluation, consistency checks (strong reasoning)
-    - Doubao (Ark): Creative content, dialogue, prose (literary quality)
+    - Qwen Long (Aliyun): 所有任务统一使用 Qwen Long，通过优化的提示词直接生成高质量内容
+    - DeepSeek: 备用提供商（推理能力强）
+    - Doubao (Ark): 备用提供商
     """
 
     # Default task type routing map
     DEFAULT_TASK_TYPE_MAP: Dict[str, LLMProvider] = {
         # Planning tasks → Qwen (long context, global memory)
+        "创意脑暴": LLMProvider.ALIYUN,
+        "creative_brainstorm": LLMProvider.ALIYUN,
+        "故事核心": LLMProvider.ALIYUN,
+        "story_core": LLMProvider.ALIYUN,
         "大纲": LLMProvider.ALIYUN,
         "outline": LLMProvider.ALIYUN,
         "风格元素": LLMProvider.ALIYUN,
         "style_elements": LLMProvider.ALIYUN,
         "人物设计": LLMProvider.ALIYUN,
         "character_design": LLMProvider.ALIYUN,
-        "主题确认": LLMProvider.ALIYUN,
-        "theme_confirmation": LLMProvider.ALIYUN,
-        "市场定位": LLMProvider.ALIYUN,
-        "market_positioning": LLMProvider.ALIYUN,
         "世界观规则": LLMProvider.ALIYUN,
         "worldview": LLMProvider.ALIYUN,
         "世界观": LLMProvider.ALIYUN,
 
-        # Logic tasks → Qwen (将 DeepSeek 改为 Qwen，降低成本)
+        # 🔥 混合方案：批量章节生成 → Qwen Long (超大上下文)
+        "批量章节生成": LLMProvider.ALIYUN,
+        "batch_chapter_generation": LLMProvider.ALIYUN,
+
+        # Logic tasks → Qwen
         "事件": LLMProvider.ALIYUN,
         "events": LLMProvider.ALIYUN,
         "场景物品冲突": LLMProvider.ALIYUN,
         "scenes_items_conflicts": LLMProvider.ALIYUN,
         "场景": LLMProvider.ALIYUN,
-        "评估": LLMProvider.ALIYUN,  # ⚠️ Qwen 评估可能更严格
+        "评估": LLMProvider.ALIYUN,
         "evaluation": LLMProvider.ALIYUN,
-        # 注：一致性检查已合并到评估任务中
 
-        # Creative tasks → Doubao (literary quality)
-        "章节内容": LLMProvider.ARK,
-        "chapter_content": LLMProvider.ARK,
-        "章节": LLMProvider.ARK,
-        "chapter": LLMProvider.ARK,
-        "修订": LLMProvider.ARK,
-        "revision": LLMProvider.ARK,
-        "润色": LLMProvider.ARK,
-        "polish": LLMProvider.ARK,
-        "对话检查": LLMProvider.ARK,
-        "dialogue_check": LLMProvider.ARK,
+        # Creative tasks → Qwen Long (使用优化的提示词直接生成高质量内容)
+        "章节内容": LLMProvider.ALIYUN,
+        "chapter_content": LLMProvider.ALIYUN,
+        "章节": LLMProvider.ALIYUN,
+        "chapter": LLMProvider.ALIYUN,
+        "修订": LLMProvider.ALIYUN,
+        "revision": LLMProvider.ALIYUN,
+        "润色": LLMProvider.ALIYUN,
+        "polish": LLMProvider.ALIYUN,
+        "章节润色": LLMProvider.ALIYUN,
+        "chapter_polish": LLMProvider.ALIYUN,
+        "对话检查": LLMProvider.ALIYUN,
+        "dialogue_check": LLMProvider.ALIYUN,
     }
 
     def __init__(
         self,
         providers: Optional[List[LLMClientBase]] = None,
         task_type_map: Optional[Dict[str, LLMProvider]] = None,
-        default_provider: LLMProvider = LLMProvider.ARK,
+        default_provider: LLMProvider = LLMProvider.ALIYUN,
         fallback_order: Optional[List[LLMProvider]] = None,
     ):
         """
@@ -721,7 +726,7 @@ class MultiLLMClient:
                 continue
 
         # All providers failed
-        raise APIError(
+        raise Exception(
             f"All providers failed for task '{task_type}': {last_error}"
         )
 

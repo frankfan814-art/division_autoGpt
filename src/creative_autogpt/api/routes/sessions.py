@@ -227,6 +227,10 @@ async def get_session_progress(
         completed_tasks=completed,
         failed_tasks=session["failed_tasks"],
         percentage=percentage,
+        # 🔥 新增：重写状态
+        is_rewriting=session.get("is_rewriting", False),
+        rewrite_attempt=session.get("rewrite_attempt"),
+        rewrite_task_type=session.get("rewrite_task_type"),
     )
 
 
@@ -414,6 +418,7 @@ async def start_session(
             memory=memory,
             evaluator=evaluator,
             config=session.get("config", {}),
+            session_storage=storage,  # 🔥 传入 session_storage 用于更新重写状态
         )
 
         # Real-time updates via WebSocket broadcast

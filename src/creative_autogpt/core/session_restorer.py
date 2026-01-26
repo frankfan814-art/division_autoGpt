@@ -122,6 +122,7 @@ class SessionRestorer:
                 memory=memory,
                 evaluator=evaluator,
                 config=config,
+                session_storage=self.storage,  # 🔥 传入 storage 用于更新重写状态
             )
 
             # 恢复引擎状态
@@ -154,16 +155,15 @@ class SessionRestorer:
             task_results: 任务结果列表
         """
         # 基础任务类型（这些任务的结果会被存储到向量库）
+        # 混合方案：创意脑暴 → 故事核心 → 大纲 → 世界观规则 → 人物设计 → 逐章生成 → 章节润色
         foundation_tasks = {
             "CREATIVE_BRAINSTORM": MemoryType.GENERAL,
             "STORY_CORE": MemoryType.GENERAL,
             "OUTLINE": MemoryType.OUTLINE,
             "WORLDVIEW_RULES": MemoryType.WORLDVIEW,
             "CHARACTER_DESIGN": MemoryType.CHARACTER,
-            "STYLE_ELEMENTS": MemoryType.GENERAL,
-            "EVENTS": MemoryType.PLOT,
-            "SCENES_ITEMS_CONFLICTS": MemoryType.SCENE,
-            "FORESHADOW_LIST": MemoryType.FORESHADOW,
+            "CHAPTER_CONTENT": MemoryType.CHAPTER,  # 逐章生成
+            # "CHAPTER_POLISH": MemoryType.CHAPTER,  # ⚠️ 已移除
         }
 
         for task in task_results:

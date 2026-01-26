@@ -19,6 +19,18 @@ const modeOptions = [
   { value: 'script', label: '剧本创作' },
 ];
 
+const authorStyleOptions = [
+  { value: '', label: '不限制（默认）' },
+  { value: 'liucixin', label: '刘慈欣 - 硬科幻，宏大的宇宙观' },
+  { value: 'jiangnan', label: '江南 - 热血青春，细腻情感' },
+  { value: 'fenghuo', label: '我吃西红柿 - 升级流，爽文' },
+  { value: 'tangjia', label: '唐家三少 - 热血冒险，友情羁绊' },
+  { value: 'chenan', label: '陈安 - 悬疑推理，逻辑严密' },
+  { value: 'caocao', label: '猫腻 - 权谋政治，文笔细腻' },
+  { value: 'wuxing', label: '耳根 - 仙侠玄幻，世界观宏大' },
+  { value: 'zhuji', label: '辰东 - 热血战斗，情节紧凑' },
+];
+
 export const Create = () => {
   const navigate = useNavigate();
   const toast = useToast();
@@ -30,6 +42,7 @@ export const Create = () => {
 
   const [title, setTitle] = useState('');
   const [mode, setMode] = useState('novel');
+  const [authorStyle, setAuthorStyle] = useState(''); // 作者风格
   const [chapterWordCount, setChapterWordCount] = useState('2500'); // 每章字数，默认2500
   const [wordCount, setWordCount] = useState('50000'); // 默认5万字
   const [approvalMode, setApprovalMode] = useState(true); // 默认开启审核模式
@@ -98,6 +111,7 @@ export const Create = () => {
           genre,
           style,
           requirements,
+          author_style: authorStyle, // 作者风格
           chapter_count: calculatedChapterCount,
           chapter_word_count: parseInt(chapterWordCount),
           word_count: parseInt(wordCount),
@@ -262,6 +276,14 @@ export const Create = () => {
             value={genre}
             onChange={(e) => setGenre(e.target.value)}
             placeholder="例如：科幻、奇幻、都市..."
+          />
+
+          {/* Author Style */}
+          <Select
+            label="参考作者风格（可选）"
+            options={authorStyleOptions}
+            value={authorStyle}
+            onChange={(e) => setAuthorStyle(e.target.value)}
           />
 
           {/* Style */}

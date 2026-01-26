@@ -366,6 +366,7 @@ async def handle_start(
             memory=memory,
             evaluator=evaluator,
             config=session.get("config", {}),
+            session_storage=storage,  # 🔥 传入 session_storage 用于更新重写状态
         )
 
         # Set callbacks for real-time updates

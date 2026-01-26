@@ -16,29 +16,21 @@ from loguru import logger
 class NovelTaskType(str, Enum):
     """Task types for novel creation"""
 
-    # Phase 0: Creative Brainstorm (创意脑暴阶段 - 新增)
+    # Phase 0: Creative Brainstorm (创意脑暴阶段)
     CREATIVE_BRAINSTORM = "创意脑暴"  # 产生多个故事点子
     STORY_CORE = "故事核心"  # 确定核心冲突和主角目标
 
-    # Planning phase
-    STYLE_ELEMENTS = "风格元素"
-    OUTLINE = "大纲"
+    # Phase 1: Enhanced Outline (加强版大纲 - 包含所有细节)
+    OUTLINE = "大纲"  # 完整大纲，包含事件、伏笔、章节规划
 
-    # Element creation phase
+    # Phase 2: Elements (元素设计 - 基于大纲)
     CHARACTER_DESIGN = "人物设计"
     WORLDVIEW_RULES = "世界观规则"
-    EVENTS = "事件"
-    SCENES_ITEMS_CONFLICTS = "场景物品冲突"
-    FORESHADOW_LIST = "伏笔列表"
 
-    # 注：一致性检查已合并到评估任务中
-    # CONSISTENCY_CHECK = "一致性检查"  # 已合并到 EVALUATION
-
-    # Chapter generation phase
-    CHAPTER_OUTLINE = "章节大纲"
-    SCENE_GENERATION = "场景生成"
-    CHAPTER_CONTENT = "章节内容"
-    CHAPTER_POLISH = "章节润色"
+    # Phase 3: Sequential Chapter Generation (逐章生成 - 确保连贯性)
+    CHAPTER_CONTENT = "章节内容"  # 逐章生成，每章依赖前一章，确保连贯性（直接生成高质量内容，无需润色）
+    # BATCH_CHAPTER_GENERATION = "批量章节生成"  # ⚠️ 已禁用：批量生成无法保证章节间连贯性
+    # CHAPTER_POLISH = "章节润色"  # ⚠️ 已移除：使用 Qwen Long 直接生成高质量内容，无需单独润色步骤
 
     # Evaluation phase
     EVALUATION = "评估"
@@ -163,7 +155,7 @@ class TaskPlanner:
     Phase 3: 人物设计 🔴基础
     Phase 4: 主题确认 → 风格元素 → 市场定位
     Phase 5: 事件 → 场景物品冲突 → 伏笔列表 🟡细节
-    Phase 6: 章节创作（一致性检查已合并到综合评估任务中）
+    Phase 5: 章节创作（使用 Qwen Long 直接生成高质量内容，无需润色步骤）
 
     章节创作时会从向量库检索：故事核心、大纲、世界观、人物、事件、伏笔
     确保不会跑偏！
@@ -171,12 +163,12 @@ class TaskPlanner:
 
     # Default task definitions for novel creation
     DEFAULT_TASK_DEFINITIONS: List[TaskDefinition] = [
-        # ============ Phase 0: 创意脑暴（灵感阶段）============
+        # ============ Phase 0: 创意脑暴 ============
         TaskDefinition(
             task_type=NovelTaskType.CREATIVE_BRAINSTORM,
             description="像顶级作家一样进行创意脑暴，产生3-5个有吸引力的故事点子，每个点子包含：核心冲突、独特卖点、情感钩子",
             depends_on=[],
-            is_foundation=False,  # 脑暴不是基础，故事核心才是
+            is_foundation=False,
         ),
         TaskDefinition(
             task_type=NovelTaskType.STORY_CORE,
@@ -185,61 +177,40 @@ class TaskPlanner:
             is_foundation=True,  # 🔴 基础任务！所有创作的锚点
         ),
 
-        # ============ Phase 1: 大纲设计（结构阶段 - 先搭骨架）============
+        # ============ Phase 1: 完整大纲（包含所有细节）============
         TaskDefinition(
             task_type=NovelTaskType.OUTLINE,
-            description="基于故事核心，设计完整的故事大纲。包括：开端→发展→高潮→结局。确定每一章的核心事件和转折点",
+            description="""基于故事核心，设计完整的小说大纲，包含：
+1. 故事结构：开端→发展→高潮→结局
+2. 事件链：所有关键事件的时间线
+3. 伏笔系统：埋设位置、暗示内容、回收时机
+4. 章节规划：每章的核心内容和目标字数
+5. 人物关系：主要人物的关系网络
+6. 世界观要点：影响故事的关键设定""",
             depends_on=["故事核心"],
-            is_foundation=True,  # 🔴 基础任务！章节创作的蓝图
+            is_foundation=True,  # 🔴 基础任务！所有创作的蓝图
         ),
 
-        # ============ Phase 2: 世界观规则（规则阶段 - 建立限制）============
+        # ============ Phase 2: 元素设计（基于大纲）============
         TaskDefinition(
             task_type=NovelTaskType.WORLDVIEW_RULES,
             description="根据大纲需要，构建让故事能够发生的世界。定义世界运作的核心规则、限制和可能性",
             depends_on=["大纲"],
-            is_foundation=True,  # 🔴 基础任务！人物和事件都要遵守
+            is_foundation=True,
         ),
-
-        # ============ Phase 3: 人物设计（角色阶段 - 在规则内设计）============
         TaskDefinition(
             task_type=NovelTaskType.CHARACTER_DESIGN,
             description="根据大纲和世界观规则，设计能够推动故事发展的人物。主角的目标、缺陷、成长弧线都要服务于大纲",
-            depends_on=["世界观规则"],
-            is_foundation=True,  # 🔴 基础任务！所有对话和行为的依据
+            depends_on=["大纲", "世界观规则"],
+            is_foundation=True,
         ),
 
-        # ============ Phase 4: 风格元素（与人物设计并行）============
-        TaskDefinition(
-            task_type=NovelTaskType.STYLE_ELEMENTS,
-            description="根据故事类型，确定最适合的叙事风格、语言风格和节奏。风格指导会自动应用到场景生成和章节润色中",
-            depends_on=["大纲"],
-            is_foundation=False,  # 风格影响写法，但不是内容约束
-        ),
+        # ============ Phase 3: 章节内容生成（逐章生成，确保连贯性）============
+        # ⚠️ 不再使用批量生成，改用逐章生成模式
+        # 章节内容任务将在 _create_chapter_tasks 中动态创建，每章依赖前一章
 
-        # ============ Phase 5: 细节填充（为大纲添加血肉）============
-        TaskDefinition(
-            task_type=NovelTaskType.EVENTS,
-            description="细化大纲中的每个章节，设计具体的事件序列。每个事件都要符合世界观规则，由人物性格驱动",
-            depends_on=["人物设计", "风格元素"],
-            is_foundation=True,  # 🔴 基础任务！具体发生什么
-        ),
-        TaskDefinition(
-            task_type=NovelTaskType.SCENES_ITEMS_CONFLICTS,
-            description="为每个事件设计具体场景、重要道具和冲突细节。场景要体现世界观，道具要有叙事功能",
-            depends_on=["事件"],
-            is_foundation=True,  # 🔴 基础任务！场景描写的依据
-        ),
-        TaskDefinition(
-            task_type=NovelTaskType.FORESHADOW_LIST,
-            description="设计伏笔和铺垫，让故事有层次感。伏笔要埋得自然，揭示时让读者恍然大悟",
-            depends_on=["场景物品冲突"],
-            is_foundation=True,  # 🔴 基础任务！章节要埋设和回收伏笔
-        ),
-
-        # ============ Phase 6: 章节创作 ============
-        # 注：一致性检查已合并到综合评估任务中，不再单独列出
-        # Phase 7: Chapter Generation - defined per chapter dynamically
+        # ============ Phase 4: 分章节润色 ============
+        # 章节润色任务将在 _create_chapter_tasks 中动态创建
     ]
 
     def __init__(self, config: Optional[Dict[str, Any]] = None):
@@ -279,7 +250,7 @@ class TaskPlanner:
 
         Args:
             goal: Creation goal with style, theme, length, etc.
-            chapter_count: Number of chapters to create
+            chapter_count: Number of chapters to create (启用逐章生成模式)
 
         Returns:
             List of tasks ready for execution
@@ -288,36 +259,18 @@ class TaskPlanner:
 
         # Clear previous tasks
         self.tasks = {}
-        
-        # 根据章节数量决定使用简化还是完整流程
-        is_short_novel = chapter_count is not None and chapter_count <= 3
-        
-        if is_short_novel:
-            # 短篇小说简化流程（布兰登·桑德森式）：
-            # 创意脑暴 → 故事核心 → 大纲 → 世界观规则 → 人物设计
-            short_novel_definitions = [
-                self.DEFAULT_TASK_DEFINITIONS[0],  # 创意脑暴
-                self.DEFAULT_TASK_DEFINITIONS[1],  # 故事核心
-                self.DEFAULT_TASK_DEFINITIONS[2],  # 大纲
-                self.DEFAULT_TASK_DEFINITIONS[3],  # 世界观规则（在人物之前！）
-                self.DEFAULT_TASK_DEFINITIONS[4],  # 人物设计（基于世界观规则）
-            ]
-            
-            # 创建任务（依赖关系已在定义中正确设置）
-            for definition in short_novel_definitions:
-                task = self._create_task_from_definition(definition, goal)
-                self.tasks[task.task_id] = task
-            
-            logger.info(f"Using simplified flow for short novel ({chapter_count} chapters): 5 base tasks")
-        else:
-            # 完整流程
-            for definition in self.DEFAULT_TASK_DEFINITIONS:
-                task = self._create_task_from_definition(definition, goal)
-                self.tasks[task.task_id] = task
 
-        # Create chapter tasks if chapter count specified
+        # 创建基础任务（创意脑暴 → 故事核心 → 大纲 → 世界观规则 → 人物设计）
+        for definition in self.DEFAULT_TASK_DEFINITIONS:
+            task = self._create_task_from_definition(definition, goal)
+            self.tasks[task.task_id] = task
+
+        # Create chapter tasks if chapter count specified (逐章生成模式)
         if chapter_count:
+            logger.info(f"🔥 逐章生成模式已启用：{chapter_count}章，每章依赖前一章确保连贯性")
             await self._create_chapter_tasks(chapter_count, goal)
+        else:
+            logger.warning("⚠️ 未指定章节数量，将跳过章节生成！请确保在 goal 中提供 chapter_count 参数")
 
         # Resolve dependencies
         self._resolve_dependencies()
@@ -359,74 +312,44 @@ class TaskPlanner:
         goal: Dict[str, Any],
     ) -> None:
         """
-        Create chapter-specific tasks
+        创建章节任务（逐章生成方案）
 
-        对于短篇小说（1-3章），简化流程：
-        1. 章节大纲
-        2. 章节内容（直接包含场景生成）
-        
-        对于中长篇（4章以上），完整流程：
-        1. 章节大纲
-        2. 章节内容
-        3. 章节润色
+        逐章生成流程：
+        1. 每个章节单独生成（章节内容，使用 Qwen Long 直接生成高质量内容）
+        2. 每个章节依赖于前面章节（保证连贯性）
+        3. 无需单独润色步骤（已整合到章节生成提示词中）
         """
-        logger.info(f"Creating tasks for {chapter_count} chapters")
-        
-        # 短篇小说简化流程
-        is_short_novel = chapter_count <= 3
+        logger.info(f"Creating tasks for {chapter_count} chapters (逐章生成方案，使用 Qwen Long 直接生成高质量内容)")
+
+        # Phase 3: 逐章生成任务
+        # 每个章节依赖于：大纲、世界观、人物设计，以及上一章节
+        previous_chapter_task_id = None
 
         for chapter_index in range(1, chapter_count + 1):
-            chapter_prefix = f"第{chapter_index}章"
-            
-            # 上一章的任务ID（用于章节间依赖）
-            prev_chapter_content_id = None
-            if chapter_index > 1:
-                # 找到上一章的章节内容任务
-                for task_id, task in self.tasks.items():
-                    if (task.task_type == NovelTaskType.CHAPTER_CONTENT and 
-                        task.metadata.get("chapter_index") == chapter_index - 1):
-                        prev_chapter_content_id = task_id
-                        break
+            # 构建依赖列表
+            depends_on = ["大纲", "世界观规则", "人物设计"]
+            if previous_chapter_task_id:
+                depends_on.append(previous_chapter_task_id)
 
-            # Chapter Outline - 直接依赖大纲
-            # 注：一致性检查已合并到综合评估任务中
-            outline_deps = ["大纲"]
-            if prev_chapter_content_id:
-                outline_deps.append(prev_chapter_content_id)
-                
-            outline_task = Task(
-                task_id=str(uuid.uuid4()),
-                task_type=NovelTaskType.CHAPTER_OUTLINE,
-                description=f"Create outline for {chapter_prefix}",
-                depends_on=outline_deps,
-                metadata={"chapter_index": chapter_index},
-            )
-            self.tasks[outline_task.task_id] = outline_task
-
-            # Chapter Content（直接依赖章节大纲，跳过场景生成）
-            content_task = Task(
+            # 创建章节内容任务（直接生成高质量，无需润色）
+            chapter_task = Task(
                 task_id=str(uuid.uuid4()),
                 task_type=NovelTaskType.CHAPTER_CONTENT,
-                description=f"Generate content for {chapter_prefix}",
-                depends_on=[outline_task.task_id],
-                metadata={"chapter_index": chapter_index},
+                description=f"生成第{chapter_index}章内容（使用 Qwen Long 直接生成高质量内容）",
+                depends_on=depends_on,
+                metadata={
+                    "chapter_index": chapter_index,
+                    "chapter_count": chapter_count,
+                    "goal_style": goal.get("style"),
+                    "goal_length": goal.get("length"),
+                    "is_first_chapter": chapter_index == 1,
+                    "direct_quality": True,  # 标记：直接生成高质量，无需润色
+                },
             )
-            self.tasks[content_task.task_id] = content_task
+            self.tasks[chapter_task.task_id] = chapter_task
+            previous_chapter_task_id = chapter_task.task_id
 
-            # 短篇小说跳过润色、评估、修订
-            if not is_short_novel:
-                # Chapter Polish
-                polish_task = Task(
-                    task_id=str(uuid.uuid4()),
-                    task_type=NovelTaskType.CHAPTER_POLISH,
-                    description=f"Polish and refine {chapter_prefix}",
-                    depends_on=[content_task.task_id],
-                    metadata={"chapter_index": chapter_index},
-                )
-                self.tasks[polish_task.task_id] = polish_task
-
-        tasks_per_chapter = 2 if is_short_novel else 3
-        logger.debug(f"Created {chapter_count * tasks_per_chapter} chapter-specific tasks (short={is_short_novel})")
+        logger.info(f"✅ 创建了 {chapter_count} 个章节内容任务（使用 Qwen Long 直接生成高质量内容，无需润色步骤）")
 
     def _resolve_dependencies(self) -> None:
         """Resolve task dependencies by task_id"""

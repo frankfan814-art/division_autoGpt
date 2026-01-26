@@ -29,6 +29,7 @@ export const Tasks = () => {
   const [activeTaskId, setActiveTaskId] = useState<string | null>(null);
   const toast = useToast();
   const setCurrentSession = useTaskStore((state) => state.setCurrentSession);  // 🔥 新增
+  const progress = useTaskStore((state) => state.progress);  // 🔥 获取进度信息（包含重写状态）
 
   // 🔥 新增：设置当前会话到 taskStore
   useEffect(() => {
@@ -100,6 +101,23 @@ export const Tasks = () => {
 
   return (
     <div className="h-full flex flex-col">
+      {/* 🔥 重写状态横幅 */}
+      {progress?.is_rewriting && (
+        <div className="bg-orange-50 border-b border-orange-200 px-4 py-2 animate-pulse">
+          <div className="flex items-center gap-2">
+            <span className="text-lg">🔄</span>
+            <span className="font-medium text-orange-800">
+              正在重写 {progress.rewrite_task_type || '当前任务'}...
+            </span>
+            {progress.rewrite_attempt !== undefined && (
+              <span className="text-sm text-orange-600">
+                (第 {progress.rewrite_attempt} 次尝试)
+              </span>
+            )}
+          </div>
+        </div>
+      )}
+
       {/* Header */}
       <div className="border-b bg-white p-4">
         <div className="flex items-center justify-between mb-4">

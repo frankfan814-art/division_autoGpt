@@ -54,6 +54,11 @@ class SessionResponse(BaseModel):
     failed_tasks: int = 0
     llm_calls: int = 0
     tokens_used: int = 0
+    # 🔥 新增：重写状态字段
+    is_rewriting: bool = False
+    rewrite_attempt: Optional[int] = None
+    rewrite_task_id: Optional[str] = None
+    rewrite_task_type: Optional[str] = None
 
     class Config:
         from_attributes = True
@@ -79,6 +84,10 @@ class SessionProgress(BaseModel):
     percentage: float
     current_task: Optional[str] = None
     estimated_remaining: Optional[int] = None  # in seconds
+    # 🔥 新增：重写状态字段
+    is_rewriting: bool = False
+    rewrite_attempt: Optional[int] = None
+    rewrite_task_type: Optional[str] = None
 
 
 class SessionExportRequest(BaseModel):

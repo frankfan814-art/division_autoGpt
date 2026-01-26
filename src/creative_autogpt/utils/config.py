@@ -38,7 +38,7 @@ class Settings(BaseSettings):
     # Default LLM parameters
     default_temperature: float = 0.7
     default_max_tokens: int = 4000
-    llm_request_timeout: int = 300  # 5 minutes for long content generation
+    llm_request_timeout: int = 3600  # 60 minutes for batch chapter generation (128K tokens)
     max_retries: int = 3
 
     # Aliyun (Qwen)

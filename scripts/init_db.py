@@ -10,6 +10,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
 from creative_autogpt.storage.session import SessionStorage
 from creative_autogpt.storage.vector_store import VectorStore
+from creative_autogpt.storage.example import WritingExampleModel  # 导入确保表被创建
 from creative_autogpt.utils.logger import setup_logger, logger
 
 
