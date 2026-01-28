@@ -7,6 +7,7 @@ import { useMutation } from '@tanstack/react-query';
 import apiClient from '@/api/client';
 import { useChatStore } from '@/stores/chatStore';
 import { ChatFeedback } from '@/types';
+import logger from '@/utils/logger';
 
 const FEEDBACK_API_URL = '/sessions/:sessionId/feedback';
 
@@ -59,7 +60,7 @@ export const useChat = (sessionId: string | null) => {
         scope,
       });
     } catch (err) {
-      console.error('Failed to send feedback:', err);
+      logger.error('Failed to send feedback:', err);
       throw err;
     }
   }, [feedbackMutation]);
@@ -68,7 +69,7 @@ export const useChat = (sessionId: string | null) => {
     try {
       await quickFeedbackMutation.mutateAsync({ feedbackId, taskId });
     } catch (err) {
-      console.error('Failed to send quick feedback:', err);
+      logger.error('Failed to send quick feedback:', err);
       throw err;
     }
   }, [quickFeedbackMutation]);

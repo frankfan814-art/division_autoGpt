@@ -1,22 +1,27 @@
 /**
- * Reader page - 独立的阅读页面，从会话列表点击阅读直接进入
+ * ReaderPanel - 阅读器面板
+ *
+ * 从 Reader 页面迁移核心逻辑，在主面板中以标签页形式展示
  */
 
 import { useState, useEffect } from 'react';
-import { useParams } from 'react-router-dom';
 import { usePreview } from '@/hooks/usePreview';
 import { useTaskProgress } from '@/hooks/useTask';
-import { useTasks } from '@/hooks/useTask';  // 🔥 新增：用于加载任务数据
+import { useTasks } from '@/hooks/useTask';
 import { Button } from '@/components/ui/Button';
 import { useTaskStore } from '@/stores/taskStore';
+import logger from '@/utils/logger';
 
-export const Reader = () => {
-  const { sessionId } = useParams<{ sessionId: string }>();
-  const { progress } = useTaskProgress(sessionId!);
+interface ReaderPanelProps {
+  sessionId: string;
+}
+
+export const ReaderPanel = ({ sessionId }: ReaderPanelProps) => {
+  const { progress } = useTaskProgress(sessionId);
   const setCurrentSession = useTaskStore((state) => state.setCurrentSession);
 
-  // 🔥 关键修复：主动加载当前会话的任务数据
-  const { isLoading: tasksLoading } = useTasks(sessionId!);
+  // 主动加载当前会话的任务数据
+  const { isLoading: tasksLoading } = useTasks(sessionId);
 
   const {
     outline,
@@ -25,19 +30,17 @@ export const Reader = () => {
     totalChapters,
     nextChapter,
     prevChapter,
-  } = usePreview(sessionId!);
+  } = usePreview(sessionId);
 
   const [showOutline, setShowOutline] = useState(false);
 
-  // 🔥 设置当前会话到 taskStore
+  // 设置当前会话到 taskStore
   useEffect(() => {
-    if (sessionId) {
-      console.log('🔄 Reader: Setting current session:', sessionId);
-      setCurrentSession(sessionId);
-    }
+    logger.debug('🔄 ReaderPanel: Setting current session:', sessionId);
+    setCurrentSession(sessionId);
   }, [sessionId, setCurrentSession]);
 
-  // 🔥 加载状态指示
+  // 加载状态指示
   if (tasksLoading) {
     return (
       <div className="h-full flex items-center justify-center bg-gray-900">
@@ -45,14 +48,6 @@ export const Reader = () => {
           <div className="animate-spin text-4xl mb-4">⏳</div>
           <p>正在加载内容...</p>
         </div>
-      </div>
-    );
-  }
-
-  if (!sessionId) {
-    return (
-      <div className="h-full flex items-center justify-center bg-gray-900">
-        <div className="text-gray-400">请选择一个会话</div>
       </div>
     );
   }

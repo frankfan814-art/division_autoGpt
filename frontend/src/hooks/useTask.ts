@@ -6,6 +6,7 @@ import { useCallback, useEffect } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { sessionsApi } from '@/api/client';
 import { useTaskStore } from '@/stores/taskStore';
+import logger from '@/utils/logger';
 
 export const useTasks = (sessionId: string, params?: { task_type?: string; chapter_index?: number }) => {
   const { getTasks, upsertTask, setLoading, setError } = useTaskStore();  // 🔥 修复：使用 getTasks
@@ -20,18 +21,18 @@ export const useTasks = (sessionId: string, params?: { task_type?: string; chapt
   const storeTasks = getTasks();  // 🔥 获取当前会话任务
 
   useEffect(() => {
-    console.log('📦 useTasks received from API:', tasks?.length || 0, 'tasks');
-    console.log('📦 Current store has:', storeTasks.length, 'tasks');
+    logger.debug('📦 useTasks received from API:', tasks?.length || 0, 'tasks');
+    logger.debug('📦 Current store has:', storeTasks.length, 'tasks');
     if (tasks && tasks.length > 0) {
       // Merge API tasks with store tasks (upsert each task to preserve WebSocket updates)
-      console.log('📦 Merging API tasks into store...');
-      tasks.forEach(task => upsertTask(task));
+      logger.debug('📦 Merging API tasks into store...');
+      tasks.forEach(task => upsertTask(task, sessionId));  // 🔥 传递 sessionId 参数
     }
     setLoading(isLoading);
     setError(error?.message || null);
-  }, [tasks, isLoading, error, upsertTask, setLoading, setError]);
+  }, [tasks, isLoading, error, upsertTask, setLoading, setError, sessionId]);  // 🔥 添加 sessionId 依赖
 
-  console.log('📦 useTasks returning:', storeTasks.length, 'tasks');
+  logger.debug('📦 useTasks returning:', storeTasks.length, 'tasks');
   return {
     tasks: storeTasks, // Return tasks from store, not from API
     isLoading,

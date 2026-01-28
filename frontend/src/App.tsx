@@ -10,10 +10,6 @@ import { Home } from './pages/Home';
 import { Create } from './pages/Create';
 import { Sessions } from './pages/Sessions';
 import { WorkspaceLayout } from './components/layout/WorkspaceLayout';
-import { Overview } from './pages/Workspace/Overview';
-import { Tasks } from './pages/Workspace/Tasks';
-import { Preview } from './pages/Workspace/Preview';
-import { Reader } from './pages/Workspace/Reader';
 import { Workspace } from './pages/Workspace/Workspace';
 import { ToastContainer } from './components/ui/Toast';
 import { WebSocketStatus } from './components/WebSocketStatus';
@@ -41,14 +37,9 @@ function App() {
             <Route path="/create" element={<Create />} />
             <Route path="/sessions" element={<Sessions />} />
 
-            {/* Workspace routes */}
+            {/* Workspace route - 统一工作区，所有功能集中在一个页面 */}
             <Route path="/workspace/:sessionId" element={<WorkspaceLayout />}>
               <Route index element={<Workspace />} />
-              <Route path="overview" element={<Overview />} />
-              <Route path="tasks" element={<Tasks />} />
-              <Route path="preview" element={<Preview />} />
-              {/* Reader is accessed directly from session list, not in sidebar */}
-              <Route path="reader" element={<Reader />} />
             </Route>
 
             <Route path="*" element={<Navigate to="/" replace />} />

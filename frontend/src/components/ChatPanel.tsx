@@ -7,6 +7,7 @@ import { useChat } from '@/hooks/useChat';
 import { Button } from './ui/Button';
 import { Input } from './ui/Input';
 import { ScopeSelector, ScopeOption } from './ScopeSelector';
+import logger from '@/utils/logger';
 
 interface ChatPanelProps {
   sessionId: string | null;
@@ -77,7 +78,7 @@ export const ChatPanel = ({ sessionId }: ChatPanelProps) => {
       setInput('');
       setPendingMessage('');
     } catch (err) {
-      console.error('Failed to send message:', err);
+      logger.error('Failed to send message:', err);
     }
   };
 
@@ -87,7 +88,7 @@ export const ChatPanel = ({ sessionId }: ChatPanelProps) => {
     try {
       await sendQuickFeedback(feedbackId);
     } catch (err) {
-      console.error('Failed to send quick feedback:', err);
+      logger.error('Failed to send quick feedback:', err);
     }
   };
 

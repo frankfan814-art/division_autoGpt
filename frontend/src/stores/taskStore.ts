@@ -15,6 +15,9 @@ export interface StepProgress {
   // 上下文检索
   context_count?: number;
   context_types?: string[];
+  // 提示词
+  prompt?: string;
+  prompt_length?: number;
   // LLM 调用
   llm_provider?: string;
   llm_model?: string;
@@ -54,7 +57,7 @@ interface TaskState {
   setStepProgress: (step: StepProgress | null) => void;  // 🔥 更新：同时更新历史
   addTask: (task: Task) => void;
   updateTask: (taskId: string, updates: Partial<Task>) => void;
-  upsertTask: (task: Task) => void;
+  upsertTask: (task: Task, sessionId?: string) => void;  // 🔥 添加可选的 sessionId 参数
   setLoading: (loading: boolean) => void;
   setError: (error: string | null) => void;
 
@@ -161,11 +164,14 @@ export const useTaskStore = create<TaskState>((set, get) => ({
       };
     }),
 
-  upsertTask: (task) =>
+  // 🔥 修复：upsertTask 现在接受可选的 sessionId 参数
+  // 如果没有提供，使用 store 中的 currentSessionId
+  upsertTask: (task, sessionId?: string) =>
     set((state) => {
-      const sessionId = state.currentSessionId;
-      if (!sessionId) return {};
-      const currentTasks = state.tasksBySession[sessionId] || [];
+      // 优先使用传入的 sessionId，否则使用 currentSessionId
+      const sid = sessionId || state.currentSessionId;
+      if (!sid) return {};
+      const currentTasks = state.tasksBySession[sid] || [];
 
       const existingIndex = currentTasks.findIndex(
         (t) => t.task_id === task.task_id
@@ -176,14 +182,14 @@ export const useTaskStore = create<TaskState>((set, get) => ({
         return {
           tasksBySession: {
             ...state.tasksBySession,
-            [sessionId]: newTasks,
+            [sid]: newTasks,
           }
         };
       }
       return {
         tasksBySession: {
           ...state.tasksBySession,
-          [sessionId]: [...currentTasks, task],
+          [sid]: [...currentTasks, task],
         }
       };
     }),

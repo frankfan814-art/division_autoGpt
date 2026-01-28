@@ -7,6 +7,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { sessionsApi } from '@/api/client';
 import { useSessionStore } from '@/stores/sessionStore';
 import { SessionCreateRequest, Session } from '@/types';
+import logger from '@/utils/logger';
 
 export const useSessions = (params?: { status?: string; page?: number; page_size?: number }) => {
   const queryClient = useQueryClient();
@@ -56,7 +57,7 @@ export const useSessions = (params?: { status?: string; page?: number; page_size
       queryClient.invalidateQueries({ queryKey: ['sessions'] });
     },
     onError: (error) => {
-      console.error('删除会话失败:', error);
+      logger.error('删除会话失败:', error);
     },
   });
 
@@ -168,7 +169,7 @@ export const useSession = (sessionId: string) => {
       window.URL.revokeObjectURL(url);
       document.body.removeChild(a);
     } catch (err) {
-      console.error('Export failed:', err);
+      logger.error('Export failed:', err);
       throw err;
     }
   }, [sessionId]);

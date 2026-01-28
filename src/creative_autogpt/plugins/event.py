@@ -47,10 +47,20 @@ class EventPlugin(NovelElementPlugin):
     async def on_init(self, context: WritingContext) -> None:
         """Initialize event plugin with session context"""
         logger.info(f"EventPlugin initialized for session {context.session_id}")
-        if "events" in context.metadata:
-            self._events = context.metadata.get("events", [])
-        if "conflicts" in context.metadata:
-            self._conflicts = context.metadata.get("conflicts", [])
+
+        # Try to load from database first
+        state = await self.load_state(context)
+        if state:
+            self._events = state.get("events", [])
+            self._conflicts = state.get("conflicts", [])
+            self._event_graph = state.get("event_graph", {})
+            logger.info(f"Loaded {len(self._events)} events from database")
+        else:
+            # Fallback to metadata
+            if "events" in context.metadata:
+                self._events = context.metadata.get("events", [])
+            if "conflicts" in context.metadata:
+                self._conflicts = context.metadata.get("conflicts", [])
 
     def get_schema(self) -> Dict[str, Any]:
         """Get JSON schema for event data"""
@@ -438,7 +448,16 @@ class EventPlugin(NovelElementPlugin):
 
     async def on_finalize(self, context: WritingContext) -> None:
         """Finalize event plugin and persist data"""
-        logger.info("EventPlugin finalized")
+        logger.info(f"EventPlugin finalized - persisting {len(self._events)} events")
+
+        # Persist to database
+        await self.persist_all(context, {
+            "events": self._events,
+            "conflicts": self._conflicts,
+            "event_graph": self._event_graph,
+        })
+
+        # Also store in metadata for compatibility
         context.metadata["events"] = self._events
         context.metadata["conflicts"] = self._conflicts
         context.metadata["event_graph"] = self._event_graph

@@ -48,10 +48,20 @@ class ForeshadowPlugin(NovelElementPlugin):
     async def on_init(self, context: WritingContext) -> None:
         """Initialize foreshadow plugin with session context"""
         logger.info(f"ForeshadowPlugin initialized for session {context.session_id}")
-        if "foreshadow_elements" in context.metadata:
-            self._elements = context.metadata.get("foreshadow_elements", [])
-        if "foreshadow_plants" in context.metadata:
-            self._plants = context.metadata.get("foreshadow_plants", {})
+
+        # Try to load from database first
+        state = await self.load_state(context)
+        if state:
+            self._elements = state.get("elements", [])
+            self._plants = state.get("plants", {})
+            self._payoffs = state.get("payoffs", {})
+            logger.info(f"Loaded {len(self._elements)} foreshadow elements from database")
+        else:
+            # Fallback to metadata
+            if "foreshadow_elements" in context.metadata:
+                self._elements = context.metadata.get("foreshadow_elements", [])
+            if "foreshadow_plants" in context.metadata:
+                self._plants = context.metadata.get("foreshadow_plants", {})
 
     def get_schema(self) -> Dict[str, Any]:
         """Get JSON schema for foreshadow data"""
@@ -363,7 +373,16 @@ class ForeshadowPlugin(NovelElementPlugin):
 
     async def on_finalize(self, context: WritingContext) -> None:
         """Finalize foreshadow plugin and persist data"""
-        logger.info("ForeshadowPlugin finalized")
+        logger.info(f"ForeshadowPlugin finalized - persisting {len(self._elements)} elements")
+
+        # Persist to database
+        await self.persist_all(context, {
+            "elements": self._elements,
+            "plants": self._plants,
+            "payoffs": self._payoffs,
+        })
+
+        # Also store in metadata for compatibility
         context.metadata["foreshadow_elements"] = self._elements
         context.metadata["foreshadow_plants"] = self._plants
         context.metadata["foreshadow_payoffs"] = self._payoffs

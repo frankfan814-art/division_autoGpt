@@ -5,6 +5,7 @@
 import { useMutation } from '@tanstack/react-query';
 import apiClient from '@/api/client';
 import { useToast } from '@/components/ui/Toast';
+import logger from '@/utils/logger';
 
 export type ExportFormat = 'txt' | 'md' | 'json' | 'full';
 
@@ -61,7 +62,7 @@ export const useExport = () => {
       toast.success(`导出成功：${data.filename}`);
     },
     onError: (error: any) => {
-      console.error('Export error:', error);
+      logger.error('Export error:', error);
       const errorMessage = error?.response?.data?.detail || error?.message || '导出失败，请重试';
       toast.error(errorMessage);
     },

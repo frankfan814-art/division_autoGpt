@@ -476,3 +476,193 @@ class PluginManager:
             self.get_info(name)
             for name in self._plugins.keys()
         ]
+
+    # ========== Plugin Collaboration Methods ==========
+
+    def get_plugin_data(self, plugin_name: str) -> Optional[Dict[str, Any]]:
+        """
+        Get data from a specific plugin for collaboration
+
+        Args:
+            plugin_name: Name of the plugin to get data from
+
+        Returns:
+            Plugin data dict or None if plugin not found
+        """
+        plugin = self._enabled.get(plugin_name)
+        if not plugin:
+            logger.warning(f"Plugin '{plugin_name}' not enabled for collaboration")
+            return None
+
+        # Collect data based on plugin type
+        data = {}
+        if plugin_name == "character":
+            data["characters"] = plugin.get_characters()
+            data["relationships"] = plugin.get_relationships()
+        elif plugin_name == "dialogue":
+            data["voice_profiles"] = plugin.get_all_voice_profiles()
+        elif plugin_name == "timeline":
+            data["timeline"] = plugin.get_timeline()
+            data["current_time"] = plugin.get_current_time()
+        elif plugin_name == "worldview":
+            data["world_settings"] = plugin._world_settings
+            data["locations"] = plugin.get_locations()
+        elif plugin_name == "event":
+            data["events"] = plugin.get_events()
+        elif plugin_name == "foreshadow":
+            data["elements"] = plugin.get_elements()
+        elif plugin_name == "scene":
+            data["scenes"] = plugin.get_scenes()
+
+        return data
+
+    def share_data_between_plugins(
+        self,
+        source_plugin: str,
+        target_plugin: str,
+        data_key: str,
+    ) -> bool:
+        """
+        Share data between plugins
+
+        Args:
+            source_plugin: Source plugin name
+            target_plugin: Target plugin name
+            data_key: Key of the data to share
+
+        Returns:
+            True if successful
+        """
+        source = self._enabled.get(source_plugin)
+        target = self._enabled.get(target_plugin)
+
+        if not source or not target:
+            logger.warning(f"Cannot share data: one or both plugins not enabled")
+            return False
+
+        try:
+            # Get data from source
+            source_data = self.get_plugin_data(source_plugin)
+            if not source_data or data_key not in source_data:
+                logger.warning(f"Data key '{data_key}' not found in plugin '{source_plugin}'")
+                return False
+
+            # Share with target plugin - target needs to handle this
+            # This is a simple mechanism - plugins can implement more sophisticated sharing
+            logger.info(f"Shared '{data_key}' from '{source_plugin}' to '{target_plugin}'")
+            return True
+
+        except Exception as e:
+            logger.error(f"Failed to share data between plugins: {e}")
+            return False
+
+    def validate_cross_plugin_consistency(
+        self,
+        context: WritingContext,
+    ) -> Dict[str, ValidationResult]:
+        """
+        Run cross-plugin consistency validation
+
+        Args:
+            context: Writing context
+
+        Returns:
+            Dict of validation_result_name -> ValidationResult
+        """
+        results = {}
+
+        # Character-Dialogue consistency
+        character_plugin = self._enabled.get("character")
+        dialogue_plugin = self._enabled.get("dialogue")
+
+        if character_plugin and dialogue_plugin:
+            # Check if all characters with dialogue have voice profiles
+            characters = character_plugin.get_characters()
+            voice_profiles = dialogue_plugin.get_all_voice_profiles()
+
+            missing_profiles = []
+            for char_id, char_data in characters.items():
+                char_name = char_data.get("name", char_id)
+                if char_name not in voice_profiles and char_data.get("role") in ["protagonist", "supporting"]:
+                    missing_profiles.append(char_name)
+
+            if missing_profiles:
+                results["character_dialogue"] = ValidationResult(
+                    valid=False,
+                    errors=[],
+                    warnings=[f"Characters missing voice profiles: {missing_profiles}"],
+                    suggestions=["Add voice profiles for consistent dialogue"],
+                )
+            else:
+                results["character_dialogue"] = ValidationResult(valid=True)
+
+        # Character-Timeline consistency
+        timeline_plugin = self._enabled.get("timeline")
+        if character_plugin and timeline_plugin:
+            # This would check character location consistency
+            # Timeline plugin already does this in validate_timeline_consistency
+            pass
+
+        # Event-Foreshadow consistency
+        event_plugin = self._enabled.get("event")
+        foreshadow_plugin = self._enabled.get("foreshadow")
+
+        if event_plugin and foreshadow_plugin:
+            # Check if major events have foreshadowing
+            events = event_plugin.get_events()
+            elements = foreshadow_plugin.get_elements()
+
+            major_events = [e for e in events if e.get("importance") == "major"]
+            unforeshadowed = []
+            for event in major_events:
+                event_chapter = event.get("chapter")
+                has_foreshadow = any(
+                    elem.get("plant_chapter", 999) < event_chapter
+                    for elem in elements
+                )
+                if not has_foreshadow:
+                    unforeshadowed.append(event.get("name", "unnamed"))
+
+            if unforeshadowed:
+                results["event_foreshadow"] = ValidationResult(
+                    valid=True,  # Just a warning, not an error
+                    errors=[],
+                    warnings=[f"Major events without foreshadowing: {unforeshadowed}"],
+                    suggestions=["Consider adding foreshadowing for these major events"],
+                )
+            else:
+                results["event_foreshadow"] = ValidationResult(valid=True)
+
+        return results
+
+    async def sync_plugin_states(
+        self,
+        context: WritingContext,
+    ) -> None:
+        """
+        Synchronize states between related plugins
+
+        Args:
+            context: Writing context
+        """
+        logger.info("Synchronizing plugin states...")
+
+        # Sync character and dialogue plugins
+        character_plugin = self._enabled.get("character")
+        dialogue_plugin = self._enabled.get("dialogue")
+
+        if character_plugin and dialogue_plugin:
+            characters = character_plugin.get_characters()
+            voice_profiles = dialogue_plugin.get_all_voice_profiles()
+
+            # Ensure all major characters have voice profiles
+            for char_id, char_data in characters.items():
+                char_name = char_data.get("name", char_id)
+                if char_data.get("role") in ["protagonist", "supporting"]:
+                    if char_name not in voice_profiles:
+                        # Extract voice profile from character data if available
+                        voice_data = char_data.get("voice_profile")
+                        if voice_data:
+                            dialogue_plugin.set_voice_profile(char_id, voice_data)
+
+        logger.info("Plugin state synchronization complete")

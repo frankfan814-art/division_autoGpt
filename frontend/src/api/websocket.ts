@@ -4,6 +4,7 @@
 
 import { WebSocketMessage } from '@/types';
 import { useWebSocketStatusStore } from '@/stores/wsStatusStore';
+import logger from '@/utils/logger';
 
 const WS_URL = import.meta.env.VITE_WS_URL || 'ws://localhost:8000/ws/ws';
 
@@ -21,7 +22,7 @@ export class WebSocketClient {
   connect() {
     // Prevent multiple connections
     if (this.ws && (this.ws.readyState === WebSocket.OPEN || this.ws.readyState === WebSocket.CONNECTING)) {
-      console.log('WebSocket already connected or connecting');
+      logger.debug('WebSocket already connected or connecting');
       return;
     }
 
@@ -31,7 +32,7 @@ export class WebSocketClient {
     this.ws = new WebSocket(WS_URL);
 
     this.ws.onopen = () => {
-      console.log('WebSocket connected');
+      logger.debug('WebSocket connected');
       this.reconnectAttempts = 0;
       statusStore.setStatus('connected');
       statusStore.setReconnectAttempts(0);
@@ -48,19 +49,19 @@ export class WebSocketClient {
         const message: WebSocketMessage = JSON.parse(event.data);
         this.handleMessage(message);
       } catch (error) {
-        console.error('Failed to parse WebSocket message:', error);
+        logger.error('Failed to parse WebSocket message:', error);
       }
     };
 
     this.ws.onclose = () => {
-      console.log('WebSocket disconnected');
+      logger.debug('WebSocket disconnected');
       statusStore.setStatus('disconnected');
       this.stopHeartbeat();
       this.scheduleReconnect();
     };
 
     this.ws.onerror = (error) => {
-      console.error('WebSocket error:', error);
+      logger.error('WebSocket error:', error);
       statusStore.setStatus('error');
       statusStore.setLastError('连接错误');
     };
@@ -81,7 +82,7 @@ export class WebSocketClient {
         try {
           handler(message);
         } catch (error) {
-          console.error(`Error in ${event} handler:`, error);
+          logger.error(`Error in ${event} handler:`, error);
         }
       });
     }
@@ -89,7 +90,7 @@ export class WebSocketClient {
 
   private scheduleReconnect() {
     if (this.reconnectAttempts >= this.maxReconnectAttempts) {
-      console.error('Max reconnect attempts reached');
+      logger.error('Max reconnect attempts reached');
       const statusStore = useWebSocketStatusStore.getState();
       statusStore.setLastError('无法连接到服务器，请刷新页面重试');
       return;
@@ -142,7 +143,7 @@ export class WebSocketClient {
       this.ws.send(JSON.stringify(data));
       return true;
     }
-    console.warn('WebSocket not ready, readyState:', this.ws?.readyState);
+    logger.warn('WebSocket not ready, readyState:', this.ws?.readyState);
     return false;
   }
 

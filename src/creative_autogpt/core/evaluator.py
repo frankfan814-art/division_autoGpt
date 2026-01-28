@@ -137,7 +137,7 @@ class EvaluationEngine:
     def __init__(
         self,
         llm_client: Optional[MultiLLMClient] = None,
-        passing_threshold: float = 0.7,
+        passing_threshold: float = 0.8,  # 🔥 默认阈值改为 0.8 (8/10)
         criteria: Optional[Dict[EvaluationCriterion, float]] = None,
     ):
         """
@@ -164,6 +164,8 @@ class EvaluationEngine:
         criteria: Optional[Dict[EvaluationCriterion, float]] = None,
         context: Optional[Dict[str, Any]] = None,
         goal: Optional[Dict[str, Any]] = None,
+        predecessor_contents: Optional[Dict[str, str]] = None,
+        chapter_context: Optional[str] = None,
     ) -> EvaluationResult:
         """
         Evaluate content quality
@@ -174,6 +176,8 @@ class EvaluationEngine:
             criteria: Custom criteria for this evaluation
             context: Additional context for evaluation
             goal: Original creation goals
+            predecessor_contents: Contents from previous tasks for cross-task consistency check
+            chapter_context: Previous chapter contents for continuity check
 
         Returns:
             EvaluationResult with scores and feedback
@@ -191,6 +195,8 @@ class EvaluationEngine:
                 criteria=eval_criteria,
                 context=context,
                 goal=goal,
+                predecessor_contents=predecessor_contents,
+                chapter_context=chapter_context,
             )
         else:
             # Use rule-based evaluation (fallback)
@@ -224,6 +230,8 @@ class EvaluationEngine:
         criteria: Dict[EvaluationCriterion, float],
         context: Optional[Dict[str, Any]] = None,
         goal: Optional[Dict[str, Any]] = None,
+        predecessor_contents: Optional[Dict[str, str]] = None,
+        chapter_context: Optional[str] = None,
     ) -> EvaluationResult:
         """
         Perform LLM-based evaluation
@@ -237,6 +245,8 @@ class EvaluationEngine:
             criteria=criteria,
             context=context,
             goal=goal,
+            predecessor_contents=predecessor_contents,
+            chapter_context=chapter_context,
         )
 
         try:
@@ -271,6 +281,8 @@ class EvaluationEngine:
         criteria: Dict[EvaluationCriterion, float],
         context: Optional[Dict[str, Any]] = None,
         goal: Optional[Dict[str, Any]] = None,
+        predecessor_contents: Optional[Dict[str, str]] = None,
+        chapter_context: Optional[str] = None,
     ) -> str:
         """Build prompt for LLM evaluation"""
 
@@ -286,6 +298,22 @@ class EvaluationEngine:
         goal_section = ""
         if goal:
             goal_section = f"\n\n创作目标:\n{json.dumps(goal, ensure_ascii=False, indent=2)}"
+
+        # 🔥 新增：前置任务内容（用于跨任务一致性检查）
+        predecessor_section = ""
+        if predecessor_contents:
+            priority_list = ["故事核心", "人物设计", "世界观规则", "风格元素", "大纲", "伏笔列表", "事件", "场景物品冲突"]
+            predecessor_section = "\n\n### 前面任务的核心成果（必须严格保持一致）\n"
+            for pred_type in priority_list:
+                if pred_type in predecessor_contents:
+                    pred_content = predecessor_contents[pred_type]
+                    max_len = 4000 if pred_type in ["故事核心", "人物设计", "大纲"] else 2000
+                    predecessor_section += f"\n#### {pred_type}\n```\n{pred_content[:max_len]}{'...' if len(pred_content) > max_len else ''}\n```\n"
+
+        # 🔥 新增：章节上下文（用于章节连贯性检查）
+        chapter_context_section = ""
+        if chapter_context:
+            chapter_context_section = f"\n\n### 前面章节内容（章节连贯性检查）\n{chapter_context}"
 
         # 🔥 根据任务类型提供具体的评估要点
         task_specific_criteria = self._get_task_evaluation_criteria(task_type)
@@ -315,12 +343,96 @@ class EvaluationEngine:
 
 ## 待评估内容
 ```
-{content[:5000]}
+{content[:8000]}
 ```
 {context_section}
 {goal_section}
+{predecessor_section}
+{chapter_context_section}
 
 ## 评估要求
+
+### 🔍 用户输入一致性检查（仅针对创意脑暴）
+
+如果前置内容中包含【用户输入】，说明这是创意脑暴任务，请务必检查脑暴结果是否**严格遵循**用户的原始输入：
+
+1. **类型/流派一致性**：
+   - 点子是否符合用户指定的【类型/流派】？
+   - 如果用户要求"科幻"，点子是否包含科幻元素？
+
+2. **风格一致性**：
+   - 点子是否符合用户指定的【写作风格】？
+   - 如果用户要求"黑暗风格"，点子是否体现这种风格？
+
+3. **创作要求一致性**：
+   - 点子是否满足用户的【创作要求】？
+   - 用户要求的关键要素是否都体现在点子中？
+
+4. **规模匹配度**：
+   - 点子的规模是否适合【目标字数】和【章节数量】？
+   - 如果用户要求100万字，点子是否有足够的扩展空间？
+
+⚠️ **用户输入一致性评判标准**：
+- **严重问题**：完全违背用户明确要求的类型/风格/核心设定
+- **中等问题**：部分偏离用户要求，但仍可调整
+- **小问题**：细节上不够贴合用户要求
+
+---
+
+### 🔍 跨任务一致性检查（重要！）
+
+如果提供了【前面任务的核心成果】，请务必检查当前内容与前面任务的**严格一致性**：
+
+1. **故事核心一致性**：
+   - 是否紧扣【故事核心】中定义的主角目标和核心冲突？
+   - 是否服务于故事的核心情感钩子？
+
+2. **人物一致性**：
+   - 如果涉及人物，是否使用了【人物设计】中已有的角色？
+   - 人物的性格、背景、目标是否与设计一致？
+   - 有没有凭空出现的新角色（应该避免）？
+
+3. **世界观一致性**：
+   - 是否符合【世界观规则】中的设定？
+   - 有没有违反已设定的规则？
+   - 新增的设定是否与已有设定冲突？
+
+4. **风格一致性**：
+   - 写作风格是否符合【风格元素】的要求？
+   - 语言调性是否统一？
+
+5. **主题一致性**：
+   - 是否围绕【故事核心】的核心主题展开？
+   - 有没有偏离主题、跑题的内容？
+
+### 📖 章节连贯性检查（如果提供了前面章节内容）
+
+如果提供了【前面章节内容】，请务必检查章节之间的连贯性：
+
+1. **开头衔接**：
+   - 本章开头是否自然衔接上一章结尾？
+   - 有没有突兀的转换或割裂感？
+
+2. **人物状态延续**：
+   - 人物位置、情绪、状态是否与上一章结尾一致？
+   - 有没有出现不合理的状态变化？
+
+3. **时间线连贯**：
+   - 时间线是否合理？
+   - 有没有时间跳跃或矛盾？
+
+4. **整体连贯性**：
+   - 本章是否像独立短篇，与前面脱节？
+   - 是否保持了叙事的连续性？
+
+⚠️ **一致性检查评判标准**：
+- **9-10分**：完全一致，没有任何问题
+- **8-9分**：有小问题但不影响整体（可以通过）
+- **8分以下**：有一致性问题需要修复（不通过）
+
+---
+
+## 评估格式要求
 
 请按以下格式返回评估结果（**必须严格遵循此格式**）：
 
@@ -640,8 +752,8 @@ class EvaluationEngine:
                     [f"一致性修复: {issue}" for issue in consistency_issues[:3]]
                 )
 
-        # 🔥 判断是否通过：两个分数都需要 >= 0.8
-        passed = quality_score >= 0.8 and consistency_score >= 0.8
+        # 🔥 判断是否通过：两个分数都需要 >= passing_threshold
+        passed = quality_score >= self.passing_threshold and consistency_score >= self.passing_threshold
 
         # 构建dimension_scores (兼容旧格式)
         dimension_scores = {
@@ -749,9 +861,9 @@ class EvaluationEngine:
             overall_score = extracted_score if extracted_score else 0.7
 
             # 🔥 检查是否明确表示"需要改进"或类似表述
-            passed = overall_score >= 0.8
+            passed = overall_score >= self.passing_threshold
             needs_rewrite = re.search(r'(需要改进|请重写|不符合要求|未达到标准|建议重新)', response, re.IGNORECASE)
-            if needs_rewrite and overall_score >= 0.8:
+            if needs_rewrite and overall_score >= self.passing_threshold:
                 overall_score = 0.7  # 明确表示需要改进，降低分数
                 passed = False
 
@@ -864,7 +976,7 @@ class EvaluationEngine:
             all_suggestions.extend(dim_score.suggestions)
 
         # 🔥 旧格式也使用新的通过标准
-        passed = overall_score >= 0.8
+        passed = overall_score >= self.passing_threshold
 
         return EvaluationResult(
             passed=passed,
@@ -1082,7 +1194,7 @@ class EvaluationEngine:
         # 🔥 更新：使用新的0.8阈值和分别的质量/一致性评分
         # 规则评估无法区分质量和一致性，使用相同分数
         return EvaluationResult(
-            passed=overall_score >= 0.8,  # 🔥 新阈值
+            passed=overall_score >= self.passing_threshold,  # 🔥 使用配置的阈值
             score=overall_score,
             quality_score=overall_score,
             consistency_score=overall_score,
@@ -1101,6 +1213,32 @@ class EvaluationEngine:
         这些要点会包含在评估提示词中，引导LLM生成更具体的建议
         """
         criteria_map = {
+            "创意脑暴": """
+**请重点评估以下方面**：
+1. **世界观一致性**（最重要！）：是否遵守用户输入中的时代/朝代设定
+   - ⛔ 严重错误：宋朝出现秦始皇、唐朝出现朱元璋等跨时代人物
+   - ⛔ 严重错误：现代都市设定出现古代人物
+   - ⛔ 严重错误：明确朝代设定下出现其他朝代标志性元素
+   - ✅ 正确：宋朝故事只有宋朝人物和事件
+   - ✅ 正确：现代都市故事符合现代设定
+
+2. **创意独特性**：点子是否有新意，避免套路和俗套
+   - 是否拒绝"废柴逆袭""退婚流"等老套路
+   - 每个点子是否有自己的"灵魂"
+
+3. **点子多样性**：多个点子之间是否有明显差异
+   - 风格是否雷同
+   - 人物动机是否复杂
+   - 冲突是否新颖
+
+4. **完整性**：每个点子是否包含核心概念、冲突、情感钩子
+5. **可行性**：创意是否可以被扩展成完整故事
+
+**常见严重问题**（直接判为不通过）：
+- ❌ 跨时代错误：宋朝故事出现秦始皇、唐朝出现朱元璋
+- ❌ 套路重复：3个点子都是"废柴逆袭""打脸复仇"
+- ❌ 设定矛盾：现代都市突然出现修仙元素且无解释
+""",
             "世界观规则": """
 **请重点评估以下方面**：
 1. **完整性**：世界观是否包含核心要素（力量体系、世界背景、社会规则等）

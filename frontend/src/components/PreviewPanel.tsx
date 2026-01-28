@@ -1,42 +1,51 @@
 /**
- * PreviewPanel component for displaying task results in tabs
+ * PreviewPanel - 预览面板
+ *
+ * 专注于单个任务的展示和审核功能
+ * 任务切换由外部的 PanelTabBar 和主面板控制
  */
 
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
+import ReactMarkdown from 'react-markdown';
+import { Badge } from './ui/Badge';
+import { Button } from './ui/Button';
+import { StepProgress } from './StepProgress';
+import { useTaskStore } from '@/stores/taskStore';
+import { Task } from '@/types';
+import { getWebSocketClient } from '@/api/websocket';
+import logger from '@/utils/logger';
 
-// 🔥 实时计时器组件
+interface PreviewPanelProps {
+  sessionId: string | null;
+}
+
+// 自动审核超时时间（秒）
+const AUTO_APPROVE_TIMEOUT = 10;
+
+// 实时计时器组件
 function RunningTimer({ taskStartTime }: { taskStartTime: string }) {
   const [elapsed, setElapsed] = useState(0);
 
   useEffect(() => {
-    // 🔥 处理时区问题：确保正确解析 ISO 时间字符串
     let startTime: number;
-
     try {
-      // 如果时间字符串包含 Z 或时区，直接解析
       if (taskStartTime.includes('Z') || taskStartTime.includes('+') || taskStartTime.includes('T')) {
         startTime = new Date(taskStartTime).getTime();
       } else {
-        // 如果没有时区信息，假设是 UTC 时间
         startTime = new Date(taskStartTime + 'Z').getTime();
       }
     } catch (e) {
-      // 如果解析失败，使用当前时间
-      console.error('Failed to parse task start time:', taskStartTime, e);
+      logger.error('Failed to parse task start time:', taskStartTime, e);
       startTime = Date.now();
     }
 
     const updateTime = () => {
       const now = Date.now();
       const diff = (now - startTime) / 1000;
-      // 避免负数（时区问题可能导致）
       setElapsed(Math.max(0, diff));
     };
 
-    // 立即更新一次
     updateTime();
-
-    // 每秒更新
     const interval = setInterval(updateTime, 1000);
     return () => clearInterval(interval);
   }, [taskStartTime]);
@@ -64,28 +73,10 @@ function RunningTimer({ taskStartTime }: { taskStartTime: string }) {
   );
 }
 
-import ReactMarkdown from 'react-markdown';
-import { Badge } from './ui/Badge';
-import { Button } from './ui/Button';
-import { StepProgress } from './StepProgress';
-import { useTaskStore } from '@/stores/taskStore';
-import { Task } from '@/types';
-import { getWebSocketClient } from '@/api/websocket';
-
-interface PreviewPanelProps {
-  sessionId: string | null;
-}
-
-// 当任务超过这个数量时，切换到紧凑模式
-const COMPACT_MODE_THRESHOLD = 8;
-
-// 自动审核超时时间（秒）
-const AUTO_APPROVE_TIMEOUT = 10;
-
 export const PreviewPanel = ({ sessionId }: PreviewPanelProps) => {
-  const tasks = useTaskStore((state) => state.getTasks());  // 🔥 修复：使用 getTasks() 获取当前会话任务
+  const tasks = useTaskStore((state) => state.getTasks());
 
-  // 🔥 使用 useMemo 创建稳定的依赖项，避免无限循环
+  // 使用 useMemo 创建稳定的依赖项
   const taskIds = useMemo(() => tasks.map(t => t.task_id).join(','), [tasks]);
   const pendingApprovalTaskId = useMemo(() => {
     const t = tasks.find(t => t.status === 'pending_approval');
@@ -94,34 +85,32 @@ export const PreviewPanel = ({ sessionId }: PreviewPanelProps) => {
 
   const [activeTaskId, setActiveTaskId] = useState<string | null>(null);
   const [showEvaluation, setShowEvaluation] = useState(false);
-  const [showTaskList, setShowTaskList] = useState(false);
+  const [showPrompt, setShowPrompt] = useState(false);  // 🔥 新增：提示词展开状态
   const [isApproving, setIsApproving] = useState(false);
   const [autoApproveCountdown, setAutoApproveCountdown] = useState<number | null>(null);
-  const [selectedIdea, setSelectedIdea] = useState<number | null>(null);  // 🎯 创意脑暴选择的点子
-  const dropdownRef = useRef<HTMLDivElement>(null);
+  const [selectedIdea, setSelectedIdea] = useState<number | null>(null);
   const autoApproveTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   // 审核任务（支持创意脑暴的点子选择）
   const handleApproveTask = useCallback((action: 'approve' | 'reject' | 'regenerate', ideaNumber?: number) => {
     if (!sessionId) return;
-    
+
     // 清除自动审核计时器
     if (autoApproveTimerRef.current) {
       clearInterval(autoApproveTimerRef.current);
       autoApproveTimerRef.current = null;
     }
     setAutoApproveCountdown(null);
-    
+
     setIsApproving(true);
     const ws = getWebSocketClient();
     ws.send({
       event: 'approve_task',
       session_id: sessionId,
       action: action,
-      selected_idea: ideaNumber,  // 🎯 传递选中的点子编号
+      selected_idea: ideaNumber,
     });
-    
-    // 等待后端响应后会自动更新状态
+
     setTimeout(() => setIsApproving(false), 1000);
   }, [sessionId]);
 
@@ -130,12 +119,11 @@ export const PreviewPanel = ({ sessionId }: PreviewPanelProps) => {
     const pendingTask = tasks.find(t => t.status === 'pending_approval');
 
     if (pendingTask) {
-      // 🎯 创意脑暴任务需要用户选择点子，不允许自动通过
+      // 创意脑暴任务需要用户选择点子，不允许自动通过
       const isBrainstormTask = pendingTask.task_type === '创意脑暴';
       const requiresSelection = isBrainstormTask || pendingTask.metadata?.requires_selection;
 
       if (requiresSelection) {
-        // 创意脑暴任务：禁用自动通过，必须等待用户选择
         setAutoApproveCountdown(null);
         if (autoApproveTimerRef.current) {
           clearInterval(autoApproveTimerRef.current);
@@ -144,13 +132,12 @@ export const PreviewPanel = ({ sessionId }: PreviewPanelProps) => {
         return;
       }
 
-      // 其他任务：开始倒计时
+      // 开始倒计时
       setAutoApproveCountdown(AUTO_APPROVE_TIMEOUT);
 
       autoApproveTimerRef.current = setInterval(() => {
         setAutoApproveCountdown(prev => {
           if (prev === null || prev <= 1) {
-            // 倒计时结束，自动通过
             clearInterval(autoApproveTimerRef.current!);
             autoApproveTimerRef.current = null;
             handleApproveTask('approve');
@@ -167,55 +154,35 @@ export const PreviewPanel = ({ sessionId }: PreviewPanelProps) => {
         }
       };
     } else {
-      // 没有待审核任务，清除计时器
       if (autoApproveTimerRef.current) {
         clearInterval(autoApproveTimerRef.current);
         autoApproveTimerRef.current = null;
       }
       setAutoApproveCountdown(null);
     }
-    // 🔥 使用稳定的依赖项：pendingApprovalTaskId 而不是 tasks
   }, [pendingApprovalTaskId, handleApproveTask]);
 
-  // Auto-select the latest running or completed task (only on initial load or when tasks first appear)
+  // 自动选择任务
   useEffect(() => {
-    // 只有在当前没有选中任务，且任务列表从空变为有数据时才自动选择
     if (tasks.length > 0 && !activeTaskId) {
-      // Find the latest running or completed task
       const latestTask = [...tasks]
         .reverse()
         .find(t => t.status === 'running' || t.status === 'completed' || t.status === 'pending_approval');
       if (latestTask) {
-        console.log('🎯 Auto-selecting initial task:', latestTask.task_type);
+        logger.debug('🎯 Auto-selecting initial task:', latestTask.task_type);
         setActiveTaskId(latestTask.task_id);
       }
     }
-  // 🔥 只在 tasks.length 变化时触发，不包括 activeTaskId，避免覆盖用户选择
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tasks.length]);
 
-  // Auto-switch to newly started task (but don't override user's manual selection)
+  // 自动切换到运行中的任务
   useEffect(() => {
     const runningTask = tasks.find(t => t.status === 'running');
-    // 只有当有运行中的任务，且当前没有选中任务，或选中的任务不是运行中的任务时才切换
     if (runningTask && (!activeTaskId || !tasks.find(t => t.task_id === activeTaskId && t.status === 'running'))) {
-      console.log('🔄 Auto-switching to running task:', runningTask.task_type);
+      logger.debug('🔄 Auto-switching to running task:', runningTask.task_type);
       setActiveTaskId(runningTask.task_id);
     }
-  // 🔥 只在任务状态变化时检查，避免频繁触发
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [taskIds]);
-
-  // Close dropdown when clicking outside
-  useEffect(() => {
-    const handleClickOutside = (event: MouseEvent) => {
-      if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
-        setShowTaskList(false);
-      }
-    };
-    document.addEventListener('mousedown', handleClickOutside);
-    return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, []);
 
   if (!sessionId) {
     return (
@@ -226,163 +193,41 @@ export const PreviewPanel = ({ sessionId }: PreviewPanelProps) => {
   }
 
   const activeTask = tasks.find(t => t.task_id === activeTaskId);
-  const isCompactMode = tasks.length > COMPACT_MODE_THRESHOLD;
 
-  const getTaskTypeLabel = (type: string, short?: boolean) => {
-    const labels: Record<string, { full: string; short: string }> = {
-      '风格元素': { full: '🎨 风格元素', short: '🎨 风格' },
-      '主题确认': { full: '📝 主题确认', short: '📝 主题' },
-      '市场定位': { full: '🎯 市场定位', short: '🎯 市场' },
-      '人物设计': { full: '👤 人物设计', short: '👤 人物' },
-      '世界观规则': { full: '🌍 世界观规则', short: '🌍 世界观' },
-      '事件': { full: '📅 事件', short: '📅 事件' },
-      '事件设定': { full: '📅 事件设定', short: '📅 事件' },
-      '场景物品冲突': { full: '🎬 场景物品冲突', short: '🎬 场景' },
-      '伏笔列表': { full: '🔮 伏笔列表', short: '🔮 伏笔' },
-      '大纲': { full: '📋 故事大纲', short: '📋 大纲' },
-      '章节大纲': { full: '📄 章节大纲', short: '📄 章纲' },
-      '章节内容': { full: '📖 章节内容', short: '📖 章节' },
-      '一致性检查': { full: '✅ 一致性检查', short: '✅ 检查' },
+  const getTaskTypeLabel = (type: string) => {
+    const labels: Record<string, string> = {
+      '风格元素': '🎨 风格元素',
+      '主题确认': '📝 主题确认',
+      '市场定位': '🎯 市场定位',
+      '人物设计': '👤 人物设计',
+      '世界观规则': '🌍 世界观规则',
+      '事件': '📅 事件',
+      '事件设定': '📅 事件设定',
+      '场景物品冲突': '🎬 场景物品冲突',
+      '伏笔列表': '🔮 伏笔列表',
+      '大纲': '📋 故事大纲',
+      '章节大纲': '📄 章节大纲',
+      '章节内容': '📖 章节内容',
+      '一致性检查': '✅ 一致性检查',
     };
-    const label = labels[type] || { full: type, short: type };
-    return short ? label.short : label.full;
+    return labels[type] || type;
   };
 
-  const getStatusBadge = (task: Task, compact?: boolean) => {
-    const size = compact ? 'xs' : 'sm';
+  const getStatusBadge = (task: Task) => {
     if (task.status === 'running') {
-      return <Badge variant="info" size={size as any}>{compact ? '⏳' : '执行中'}</Badge>;
+      return <Badge variant="info">执行中</Badge>;
     } else if (task.status === 'completed') {
-      return <Badge variant="success" size={size as any}>{compact ? '✓' : '已完成'}</Badge>;
+      return <Badge variant="success">已完成</Badge>;
     } else if (task.status === 'failed') {
-      return <Badge variant="danger" size={size as any}>{compact ? '✗' : '失败'}</Badge>;
+      return <Badge variant="danger">失败</Badge>;
     } else if (task.status === 'pending_approval') {
-      return <Badge variant="warning" size={size as any}>{compact ? '⏸' : '待审核'}</Badge>;
+      return <Badge variant="warning">待审核</Badge>;
     }
-    return <Badge variant="default" size={size as any}>{compact ? '○' : '待执行'}</Badge>;
-  };
-
-  const getStatusColor = (status: string) => {
-    switch (status) {
-      case 'running': return 'bg-blue-500';
-      case 'completed': return 'bg-green-500';
-      case 'failed': return 'bg-red-500';
-      case 'pending_approval': return 'bg-yellow-500';
-      default: return 'bg-gray-300';
-    }
-  };
-
-  // 计算任务统计
-  const taskStats = {
-    total: tasks.length,
-    completed: tasks.filter(t => t.status === 'completed').length,
-    running: tasks.filter(t => t.status === 'running').length,
-    pending: tasks.filter(t => t.status === 'pending').length,
+    return <Badge variant="default">待执行</Badge>;
   };
 
   return (
     <div className="h-full flex flex-col bg-white">
-      {/* Tab Bar */}
-      <div className="border-b bg-gray-50">
-        {isCompactMode ? (
-          /* 紧凑模式：下拉选择器 + 状态条 */
-          <div className="flex items-center p-2 gap-2">
-            {/* 当前任务选择器 */}
-            <div className="relative flex-1" ref={dropdownRef}>
-              <button
-                onClick={() => setShowTaskList(!showTaskList)}
-                className="w-full px-3 py-2 bg-white border rounded-lg text-left flex items-center justify-between hover:border-blue-400 transition-colors"
-              >
-                <span className="flex items-center gap-2">
-                  {activeTask ? (
-                    <>
-                      {getTaskTypeLabel(activeTask.task_type)}
-                      {getStatusBadge(activeTask, true)}
-                    </>
-                  ) : (
-                    <span className="text-gray-400">选择任务...</span>
-                  )}
-                </span>
-                <svg className={`w-4 h-4 transition-transform ${showTaskList ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-                </svg>
-              </button>
-              
-              {/* 下拉列表 */}
-              {showTaskList && (
-                <div className="absolute z-50 w-full mt-1 bg-white border rounded-lg shadow-lg max-h-80 overflow-y-auto">
-                  {tasks.map((task, index) => (
-                    <button
-                      key={task.task_id}
-                      onClick={() => {
-                        setActiveTaskId(task.task_id);
-                        setShowTaskList(false);
-                      }}
-                      className={`w-full px-3 py-2 text-left flex items-center justify-between hover:bg-gray-50 ${
-                        activeTaskId === task.task_id ? 'bg-blue-50' : ''
-                      } ${index !== tasks.length - 1 ? 'border-b' : ''}`}
-                    >
-                      <span className="flex items-center gap-2">
-                        <span className="text-xs text-gray-400 w-4">{index + 1}</span>
-                        <span className={activeTaskId === task.task_id ? 'text-blue-700 font-medium' : ''}>
-                          {getTaskTypeLabel(task.task_type)}
-                        </span>
-                      </span>
-                      {getStatusBadge(task, true)}
-                    </button>
-                  ))}
-                </div>
-              )}
-            </div>
-            
-            {/* 进度指示器 */}
-            <div className="flex items-center gap-1 px-2 py-1 bg-gray-100 rounded-lg">
-              <span className="text-xs text-gray-500">{taskStats.completed}/{taskStats.total}</span>
-              <div className="flex gap-0.5">
-                {tasks.slice(0, 12).map((task, i) => (
-                  <div
-                    key={i}
-                    className={`w-2 h-2 rounded-full ${getStatusColor(task.status)} ${
-                      task.task_id === activeTaskId ? 'ring-2 ring-blue-400' : ''
-                    }`}
-                    title={getTaskTypeLabel(task.task_type)}
-                  />
-                ))}
-                {tasks.length > 12 && (
-                  <span className="text-xs text-gray-400 ml-1">+{tasks.length - 12}</span>
-                )}
-              </div>
-            </div>
-          </div>
-        ) : (
-          /* 普通模式：Tab 按钮 */
-          <div className="overflow-x-auto scrollbar-thin scrollbar-thumb-gray-300 scrollbar-track-gray-100">
-            <div className="flex items-center gap-1 p-2 min-w-min">
-              {tasks.length === 0 ? (
-                <div className="px-4 py-2 text-sm text-gray-400">
-                  等待任务启动...
-                </div>
-              ) : (
-                tasks.map((task) => (
-                  <button
-                    key={task.task_id}
-                    onClick={() => setActiveTaskId(task.task_id)}
-                    className={`px-3 py-2 rounded-lg text-sm font-medium transition-all whitespace-nowrap flex items-center gap-2 flex-shrink-0 ${
-                      activeTaskId === task.task_id
-                        ? 'bg-blue-100 text-blue-700 shadow-sm'
-                        : 'text-gray-600 hover:bg-gray-100'
-                    }`}
-                  >
-                    {getTaskTypeLabel(task.task_type, tasks.length > 6)}
-                    {getStatusBadge(task, tasks.length > 6)}
-                  </button>
-                ))
-              )}
-            </div>
-          </div>
-        )}
-      </div>
-
       {/* Content Area */}
       <div className="flex-1 overflow-y-auto">
         {activeTask ? (
@@ -414,7 +259,6 @@ export const PreviewPanel = ({ sessionId }: PreviewPanelProps) => {
               {/* Evaluation Summary */}
               {activeTask.evaluation && (
                 <div className="flex items-center gap-4 text-sm flex-wrap">
-                  {/* 🔥 质量评分 */}
                   {activeTask.evaluation.quality_score !== undefined ? (
                     <span className={`font-semibold ${
                       activeTask.evaluation.quality_score >= 0.8 ? 'text-green-600' :
@@ -433,7 +277,6 @@ export const PreviewPanel = ({ sessionId }: PreviewPanelProps) => {
                     </span>
                   )}
 
-                  {/* 🔥 一致性评分 */}
                   {activeTask.evaluation.consistency_score !== undefined && (
                     <span className={`font-semibold ${
                       activeTask.evaluation.consistency_score >= 0.8 ? 'text-green-600' :
@@ -456,12 +299,12 @@ export const PreviewPanel = ({ sessionId }: PreviewPanelProps) => {
                   </Button>
                 </div>
               )}
-              
-              {/* 🔥 任务统计信息 - 执行时间、tokens、费用、重试次数 */}
+
+              {/* 任务统计信息 */}
               {activeTask.status === 'completed' && (
                 <div className="mt-3 flex flex-wrap items-center gap-3 text-sm bg-gray-50 p-3 rounded-lg border">
                   {activeTask.execution_time_seconds !== undefined && (
-                    <div className="flex items-center gap-1.5" title="执行时间">
+                    <div className="flex items-center gap-1.5">
                       <span className="text-lg">⏱️</span>
                       <span className="text-gray-700">
                         <span className="font-medium">{activeTask.execution_time_seconds.toFixed(1)}</span>
@@ -470,42 +313,51 @@ export const PreviewPanel = ({ sessionId }: PreviewPanelProps) => {
                     </div>
                   )}
                   {activeTask.total_tokens !== undefined && activeTask.total_tokens > 0 && (
-                    <div className="flex items-center gap-1.5" title={`输入: ${activeTask.prompt_tokens || 0} | 输出: ${activeTask.completion_tokens || 0}`}>
+                    <div className="flex items-center gap-1.5">
                       <span className="text-lg">🔤</span>
                       <span className="text-gray-700">
                         <span className="font-medium">{activeTask.total_tokens.toLocaleString()}</span>
                         <span className="text-gray-500 ml-0.5">tokens</span>
                       </span>
-                      <span className="text-xs text-gray-400">
-                        (输入:{activeTask.prompt_tokens?.toLocaleString() || 0} / 输出:{activeTask.completion_tokens?.toLocaleString() || 0})
-                      </span>
                     </div>
                   )}
                   {activeTask.cost_usd !== undefined && activeTask.cost_usd > 0 && (
-                    <div className="flex items-center gap-1.5" title="API 费用">
+                    <div className="flex items-center gap-1.5">
                       <span className="text-lg">💰</span>
                       <span className="text-green-600 font-medium">
                         ${activeTask.cost_usd.toFixed(4)}
                       </span>
                     </div>
                   )}
-                  {((activeTask.retry_count && activeTask.retry_count > 1) || 
-                    (activeTask.failed_attempts && activeTask.failed_attempts > 0)) && (
-                    <div className="flex items-center gap-1.5" title="重试信息">
-                      <span className="text-lg">🔄</span>
-                      <span className="text-orange-600">
-                        {activeTask.failed_attempts && activeTask.failed_attempts > 0 && (
-                          <span className="font-medium">{activeTask.failed_attempts} 次失败</span>
-                        )}
-                        {activeTask.retry_count && activeTask.retry_count > 1 && (
-                          <span className="font-medium ml-1">/ 共 {activeTask.retry_count} 次尝试</span>
-                        )}
-                      </span>
-                    </div>
-                  )}
                 </div>
               )}
             </div>
+
+            {/* 🔥 提示词显示区域 */}
+            {activeTask.metadata?.prompt && (
+              <div className="mb-6 border rounded-lg overflow-hidden">
+                <button
+                  onClick={() => setShowPrompt(!showPrompt)}
+                  className="w-full px-4 py-3 bg-blue-50 hover:bg-blue-100 flex items-center justify-between text-sm font-medium text-blue-700 transition-colors"
+                >
+                  <div className="flex items-center gap-2">
+                    <span className="text-lg">📝</span>
+                    <span>提示词</span>
+                    <span className="text-xs text-blue-600 font-normal">
+                      ({activeTask.metadata.prompt_length || activeTask.metadata.prompt?.length || 0} 字符)
+                    </span>
+                  </div>
+                  <span className="text-blue-500">{showPrompt ? '▼' : '▶'}</span>
+                </button>
+                {showPrompt && (
+                  <div className="p-4 bg-gray-50 max-h-96 overflow-y-auto border-t">
+                    <pre className="text-sm text-gray-800 whitespace-pre-wrap font-mono leading-relaxed">
+                      {activeTask.metadata.prompt}
+                    </pre>
+                  </div>
+                )}
+              </div>
+            )}
 
             {/* Task Result */}
             {activeTask.result ? (
@@ -514,7 +366,6 @@ export const PreviewPanel = ({ sessionId }: PreviewPanelProps) => {
                 <div className="bg-gray-50 rounded-lg p-4 border border-gray-200 prose prose-sm max-w-none">
                   <ReactMarkdown
                     components={{
-                      // 自定义样式
                       h1: ({children}) => <h1 className="text-xl font-bold mt-4 mb-2 text-gray-900">{children}</h1>,
                       h2: ({children}) => <h2 className="text-lg font-bold mt-3 mb-2 text-gray-800">{children}</h2>,
                       h3: ({children}) => <h3 className="text-base font-semibold mt-2 mb-1 text-gray-800">{children}</h3>,
@@ -523,32 +374,20 @@ export const PreviewPanel = ({ sessionId }: PreviewPanelProps) => {
                       ol: ({children}) => <ol className="list-decimal list-inside my-2 space-y-1">{children}</ol>,
                       li: ({children}) => <li className="text-gray-700">{children}</li>,
                       strong: ({children}) => <strong className="font-semibold text-gray-900">{children}</strong>,
-                      em: ({children}) => <em className="italic text-gray-600">{children}</em>,
                       blockquote: ({children}) => <blockquote className="border-l-4 border-blue-300 pl-4 my-2 text-gray-600 italic">{children}</blockquote>,
-                      code: ({children, className}) => {
-                        const isInline = !className;
-                        return isInline ? (
-                          <code className="bg-gray-200 px-1 rounded text-sm text-red-600">{children}</code>
-                        ) : (
-                          <code className="block bg-gray-800 text-gray-100 p-3 rounded-lg overflow-x-auto text-sm">{children}</code>
-                        );
-                      },
-                      hr: () => <hr className="my-4 border-gray-300" />,
                     }}
                   >
                     {activeTask.result}
                   </ReactMarkdown>
                 </div>
-                
+
                 {/* Approval Buttons */}
                 {activeTask.status === 'pending_approval' && (() => {
-                  // 🎯 检查是否是创意脑暴任务
                   const isBrainstormTask = activeTask.task_type === '创意脑暴';
                   const requiresSelection = isBrainstormTask || activeTask.metadata?.requires_selection;
-                  
+
                   return (
                     <div className="mt-4 p-4 bg-yellow-50 border border-yellow-200 rounded-lg">
-                      {/* 创意脑暴点子选择 */}
                       {requiresSelection && (
                         <div className="mb-4 p-3 bg-blue-50 border border-blue-200 rounded-lg">
                           <h3 className="text-sm font-semibold text-blue-800 mb-3">
@@ -584,11 +423,11 @@ export const PreviewPanel = ({ sessionId }: PreviewPanelProps) => {
                           )}
                         </div>
                       )}
-                      
+
                       <div className="flex items-center justify-between mb-3">
                         <p className="text-sm text-yellow-800">
-                          {requiresSelection 
-                            ? '🎨 创意脑暴任务需要您选择一个点子' 
+                          {requiresSelection
+                            ? '🎨 创意脑暴任务需要您选择一个点子'
                             : '⏸️ 此任务正在等待您的审核，请确认后再继续'}
                         </p>
                         {autoApproveCountdown !== null && !requiresSelection && (
@@ -607,7 +446,7 @@ export const PreviewPanel = ({ sessionId }: PreviewPanelProps) => {
                               return;
                             }
                             handleApproveTask('approve', selectedIdea || undefined);
-                            setSelectedIdea(null);  // 重置选择
+                            setSelectedIdea(null);
                           }}
                           isLoading={isApproving}
                           disabled={requiresSelection && !selectedIdea}
@@ -637,7 +476,6 @@ export const PreviewPanel = ({ sessionId }: PreviewPanelProps) => {
               </div>
             ) : activeTask.status === 'running' ? (
               <div className="py-6">
-                {/* 🔥 任务运行时显示实时计时器 */}
                 <div className="mb-4 p-3 bg-blue-50 border border-blue-200 rounded-lg">
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-2">
@@ -647,7 +485,6 @@ export const PreviewPanel = ({ sessionId }: PreviewPanelProps) => {
                     <RunningTimer taskStartTime={activeTask.created_at} />
                   </div>
                 </div>
-                {/* 🔥 显示详细步骤进度 */}
                 <StepProgress />
               </div>
             ) : (
@@ -660,7 +497,37 @@ export const PreviewPanel = ({ sessionId }: PreviewPanelProps) => {
             {showEvaluation && activeTask.evaluation && (
               <div className="mb-6">
                 <h3 className="text-sm font-semibold text-gray-700 mb-3">评估详情</h3>
-                
+
+                {/* 🔥 质量问题 */}
+                {activeTask.evaluation.quality_issues && activeTask.evaluation.quality_issues.length > 0 && (
+                  <div className="mb-4">
+                    <h4 className="text-xs font-medium text-orange-600 mb-2 flex items-center gap-1">
+                      <span>📝</span>
+                      <span>质量问题：</span>
+                    </h4>
+                    <ul className="list-disc list-inside space-y-1 text-sm text-gray-700 bg-orange-50 p-3 rounded-lg border border-orange-200">
+                      {activeTask.evaluation.quality_issues.map((issue, idx) => (
+                        <li key={idx}>{issue}</li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+
+                {/* 🔥 一致性问题 */}
+                {activeTask.evaluation.consistency_issues && activeTask.evaluation.consistency_issues.length > 0 && (
+                  <div className="mb-4">
+                    <h4 className="text-xs font-medium text-red-600 mb-2 flex items-center gap-1">
+                      <span>🔍</span>
+                      <span>一致性问题：</span>
+                    </h4>
+                    <ul className="list-disc list-inside space-y-1 text-sm text-gray-700 bg-red-50 p-3 rounded-lg border border-red-200">
+                      {activeTask.evaluation.consistency_issues.map((issue, idx) => (
+                        <li key={idx}>{issue}</li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+
                 {activeTask.evaluation.reasons && activeTask.evaluation.reasons.length > 0 && (
                   <div className="mb-4">
                     <h4 className="text-xs font-medium text-gray-600 mb-2">问题分析：</h4>

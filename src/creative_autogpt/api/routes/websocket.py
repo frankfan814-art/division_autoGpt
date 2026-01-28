@@ -17,6 +17,16 @@ from creative_autogpt.utils.llm_client import MultiLLMClient
 from creative_autogpt.core.vector_memory import VectorMemoryManager
 from creative_autogpt.core.evaluator import EvaluationEngine
 from creative_autogpt.core.loop_engine import LoopEngine, ExecutionStatus
+from creative_autogpt.plugins.manager import PluginManager
+from creative_autogpt.plugins import (
+    CharacterPlugin,
+    WorldViewPlugin,
+    EventPlugin,
+    ForeshadowPlugin,
+    TimelinePlugin,
+    ScenePlugin,
+    DialoguePlugin,
+)
 
 router = APIRouter(prefix="/ws", tags=["websocket"])
 
@@ -360,6 +370,25 @@ async def handle_start(
 
         logger.info(f"✅ Loaded {len(completed_tasks)} completed tasks into memory")
 
+        # 🔥 初始化插件系统
+        plugin_manager = PluginManager()
+        # 注册所有插件
+        plugins = [
+            CharacterPlugin(),
+            WorldViewPlugin(),
+            EventPlugin(),
+            ForeshadowPlugin(),
+            TimelinePlugin(),
+            ScenePlugin(),
+            DialoguePlugin(),
+        ]
+        for plugin in plugins:
+            try:
+                plugin_manager.register(plugin)
+                logger.info(f"✅ Registered plugin: {plugin.name}")
+            except Exception as e:
+                logger.warning(f"⚠️ Failed to register plugin {plugin.name}: {e}")
+
         engine = LoopEngine(
             session_id=session_id,
             llm_client=llm_client,
@@ -367,6 +396,7 @@ async def handle_start(
             evaluator=evaluator,
             config=session.get("config", {}),
             session_storage=storage,  # 🔥 传入 session_storage 用于更新重写状态
+            plugin_manager=plugin_manager,  # 🔥 传入插件管理器
         )
 
         # Set callbacks for real-time updates
@@ -390,6 +420,8 @@ async def handle_start(
                             "llm_provider": provider,
                             "llm_model": model,
                             "created_at": datetime.utcnow().isoformat(),
+                            # 🔥 添加 metadata 字段（提示词可能在执行过程中才添加）
+                            "metadata": task.metadata,
                         },
                     },
                     session_id,
@@ -468,6 +500,8 @@ async def handle_start(
                             "cost_usd": round(task.cost_usd, 6) if task.cost_usd else 0,
                             "failed_attempts": task.failed_attempts,
                             "retry_count": task.metadata.get("final_retry_count", 0),
+                            # 🔥 添加 metadata 字段（包含 prompt）
+                            "metadata": task.metadata,
                         },
                     },
                     session_id,
@@ -513,6 +547,8 @@ async def handle_start(
                             "llm_provider": task.metadata.get("llm_provider", "unknown"),
                             "llm_model": task.metadata.get("llm_model", "unknown"),
                             "created_at": datetime.utcnow().isoformat(),
+                            # 🔥 添加 metadata 字段（包含 prompt）
+                            "metadata": task.metadata,
                         },
                     },
                     session_id,
@@ -538,6 +574,8 @@ async def handle_start(
                             "llm_provider": task.metadata.get("llm_provider", "unknown"),
                             "llm_model": task.metadata.get("llm_model", "unknown"),
                             "created_at": datetime.utcnow().isoformat(),
+                            # 🔥 添加 metadata 字段
+                            "metadata": task.metadata,
                         },
                     },
                     session_id,
@@ -590,7 +628,12 @@ async def handle_start(
         async def run_engine():
             logger.info(f"🏃 run_engine started for session {session_id[:8]}")
             try:
-                goal = session.get("goal", {})
+                # 🔥 确保 goal 包含 title（title 是 session 的独立字段）
+                goal = session.get("goal", {}).copy() if session.get("goal") else {}
+                goal["title"] = session.get("title", "")
+                # 🔥 字段名映射：前端使用 requirements（复数），后端使用 requirement（单数）
+                if "requirements" in goal and "requirement" not in goal:
+                    goal["requirement"] = goal.pop("requirements")
                 chapter_count = goal.get("chapter_count") or session.get("config", {}).get("chapter_count")
                 logger.info(f"📚 Starting engine.run with goal: {goal.get('title', 'Untitled')}, chapters: {chapter_count}")
 

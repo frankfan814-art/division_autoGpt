@@ -2,6 +2,7 @@
  * TaskCard component for displaying task information with interactions
  */
 
+import { useState } from 'react';
 import { Task } from '@/types';
 import { Badge } from './ui/Badge';
 import { Button } from './ui/Button';
@@ -26,8 +27,8 @@ const statusConfig: Record<string, { label: string; variant: 'default' | 'succes
 
 const defaultStatusInfo = { label: '未知', variant: 'default' as const };
 
-export const TaskCard = ({ 
-  task, 
+export const TaskCard = ({
+  task,
   showEvaluation = true,
   isActive = false,
   onClick,
@@ -36,6 +37,9 @@ export const TaskCard = ({
 }: TaskCardProps) => {
   // 安全获取状态信息，防止未知状态导致崩溃
   const statusInfo = statusConfig[task.status] || defaultStatusInfo;
+
+  // 🔥 新增：提示词展开/折叠状态
+  const [showPrompt, setShowPrompt] = useState(false);
 
   const handleRetry = (e: React.MouseEvent) => {
     e.stopPropagation();
@@ -235,6 +239,29 @@ export const TaskCard = ({
       )}
 
       {renderEvaluation()}
+
+      {/* 🔥 新增：提示词显示区域 */}
+      {task.metadata?.prompt && (
+        <div className="mt-3 border rounded-lg overflow-hidden">
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              setShowPrompt(!showPrompt);
+            }}
+            className="w-full px-3 py-2 bg-blue-50 hover:bg-blue-100 flex items-center justify-between text-sm font-medium text-blue-700 transition-colors"
+          >
+            <span>📝 提示词 ({task.metadata.prompt_length || task.metadata.prompt?.length || 0} 字符)</span>
+            <span className="text-blue-500">{showPrompt ? '▼' : '▶'}</span>
+          </button>
+          {showPrompt && (
+            <div className="p-3 bg-gray-50 max-h-96 overflow-y-auto">
+              <pre className="text-xs text-gray-700 whitespace-pre-wrap font-mono">
+                {task.metadata.prompt}
+              </pre>
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Action buttons for failed tasks */}
       {task.status === 'failed' && (onRetry || onSkip) && (

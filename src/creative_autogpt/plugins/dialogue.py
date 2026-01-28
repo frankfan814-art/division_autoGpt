@@ -49,8 +49,18 @@ class DialoguePlugin(NovelElementPlugin):
     async def on_init(self, context: WritingContext) -> None:
         """Initialize dialogue plugin with session context"""
         logger.info(f"DialoguePlugin initialized for session {context.session_id}")
-        if "voice_profiles" in context.metadata:
-            self._voice_profiles = context.metadata.get("voice_profiles", {})
+
+        # Try to load from database first
+        state = await self.load_state(context)
+        if state:
+            self._voice_profiles = state.get("voice_profiles", {})
+            self._dialogue_samples = state.get("dialogue_samples", {})
+            self._dialogue_issues = state.get("dialogue_issues", [])
+            logger.info(f"Loaded {len(self._voice_profiles)} voice profiles from database")
+        else:
+            # Fallback to metadata
+            if "voice_profiles" in context.metadata:
+                self._voice_profiles = context.metadata.get("voice_profiles", {})
 
     def get_schema(self) -> Dict[str, Any]:
         """Get JSON schema for dialogue/voice profile data"""
@@ -379,7 +389,16 @@ class DialoguePlugin(NovelElementPlugin):
 
     async def on_finalize(self, context: WritingContext) -> None:
         """Finalize dialogue plugin and persist data"""
-        logger.info("DialoguePlugin finalized")
+        logger.info(f"DialoguePlugin finalized - persisting {len(self._voice_profiles)} voice profiles")
+
+        # Persist to database
+        await self.persist_all(context, {
+            "voice_profiles": self._voice_profiles,
+            "dialogue_samples": self._dialogue_samples,
+            "dialogue_issues": self._dialogue_issues,
+        })
+
+        # Also store in metadata for compatibility
         context.metadata["voice_profiles"] = self._voice_profiles
         context.metadata["dialogue_samples"] = self._dialogue_samples
         context.metadata["dialogue_issues"] = self._dialogue_issues

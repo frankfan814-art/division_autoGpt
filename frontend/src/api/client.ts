@@ -4,6 +4,7 @@
 
 import axios from 'axios';
 import type { Session, SessionCreateRequest, Task, TaskProgress, HealthResponse } from '@/types';
+import logger from '@/utils/logger';
 
 // API基础路径 - 开发环境通过Vite代理转发到后端
 // 生产环境需要配置 VITE_API_BASE_URL 环境变量为完整的后端地址
@@ -14,7 +15,8 @@ const apiClient = axios.create({
   headers: {
     'Content-Type': 'application/json',
   },
-  timeout: 30000,
+  // 默认超时 5 分钟（AI 生成可能需要较长时间）
+  timeout: 300000,
 });
 
 // Request interceptor
@@ -31,7 +33,7 @@ apiClient.interceptors.request.use(
 apiClient.interceptors.response.use(
   (response) => response,
   (error) => {
-    console.error('API error:', error.response?.data || error.message);
+    logger.error('API error:', error.response?.data || error.message);
     return Promise.reject(error.response?.data || error.message);
   }
 );

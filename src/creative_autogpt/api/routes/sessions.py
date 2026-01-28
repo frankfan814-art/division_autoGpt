@@ -396,6 +396,16 @@ async def start_session(
         from creative_autogpt.core.loop_engine import LoopEngine, ExecutionStatus
         from creative_autogpt.storage.vector_store import VectorStore
         from creative_autogpt.api.routes.websocket import manager
+        from creative_autogpt.plugins.manager import PluginManager
+        from creative_autogpt.plugins import (
+            CharacterPlugin,
+            WorldViewPlugin,
+            EventPlugin,
+            ForeshadowPlugin,
+            TimelinePlugin,
+            ScenePlugin,
+            DialoguePlugin,
+        )
 
         registry = await get_registry()
 
@@ -412,6 +422,24 @@ async def start_session(
         memory = VectorMemoryManager(vector_store=vector_store)
         evaluator = EvaluationEngine(llm_client=llm_client)
 
+        # 🔥 初始化插件系统
+        plugin_manager = PluginManager()
+        plugins = [
+            CharacterPlugin(),
+            WorldViewPlugin(),
+            EventPlugin(),
+            ForeshadowPlugin(),
+            TimelinePlugin(),
+            ScenePlugin(),
+            DialoguePlugin(),
+        ]
+        for plugin in plugins:
+            try:
+                plugin_manager.register(plugin)
+                logger.info(f"✅ Registered plugin: {plugin.name}")
+            except Exception as e:
+                logger.warning(f"⚠️ Failed to register plugin {plugin.name}: {e}")
+
         engine = LoopEngine(
             session_id=session_id,
             llm_client=llm_client,
@@ -419,6 +447,7 @@ async def start_session(
             evaluator=evaluator,
             config=session.get("config", {}),
             session_storage=storage,  # 🔥 传入 session_storage 用于更新重写状态
+            plugin_manager=plugin_manager,  # 🔥 传入插件管理器
         )
 
         # Real-time updates via WebSocket broadcast
@@ -485,8 +514,14 @@ async def start_session(
 
         async def run_engine():
             try:
+                # 🔥 确保 goal 包含 title（title 是 session 的独立字段）
+                goal = session.get("goal", {}).copy() if session.get("goal") else {}
+                goal["title"] = session.get("title", "")
+                # 🔥 字段名映射：前端使用 requirements（复数），后端使用 requirement（单数）
+                if "requirements" in goal and "requirement" not in goal:
+                    goal["requirement"] = goal.pop("requirements")
                 result = await engine.run(
-                    goal=session.get("goal", {}),
+                    goal=goal,
                     chapter_count=session.get("config", {}).get("chapter_count"),
                 )
 
@@ -894,6 +929,111 @@ async def get_restore_info(
         raise
     except Exception as e:
         logger.error(f"Failed to get restore info: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=str(e)
+        )
+
+
+@router.get("/{session_id}/plugins", response_model=SuccessResponse)
+async def get_session_plugins(
+    session_id: str,
+    storage: SessionStorage = Depends(get_session_storage),
+):
+    """
+    Get plugin status and data for a session
+
+    Returns information about all plugins and their stored data.
+    """
+    session = await storage.get_session(session_id)
+    if not session:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Session {session_id} not found"
+        )
+
+    try:
+        # Load all plugin data for this session
+        plugin_data = await storage.load_plugin_data(session_id)
+
+        # Get list of available plugins
+        from creative_autogpt.plugins import CharacterPlugin, WorldViewPlugin, EventPlugin
+        from creative_autogpt.plugins import ForeshadowPlugin, TimelinePlugin, ScenePlugin
+        from creative_autogpt.plugins import DialoguePlugin
+
+        available_plugins = {
+            "character": {"name": "Character Plugin", "description": "角色管理"},
+            "worldview": {"name": "WorldView Plugin", "description": "世界观构建"},
+            "event": {"name": "Event Plugin", "description": "事件管理"},
+            "foreshadow": {"name": "Foreshadow Plugin", "description": "伏笔管理"},
+            "timeline": {"name": "Timeline Plugin", "description": "时间线管理"},
+            "scene": {"name": "Scene Plugin", "description": "场景管理"},
+            "dialogue": {"name": "Dialogue Plugin", "description": "对话管理"},
+        }
+
+        result = {
+            "session_id": session_id,
+            "available_plugins": available_plugins,
+            "active_plugins": list(plugin_data.keys()),
+            "plugin_data_summary": {}
+        }
+
+        # Add summary of each plugin's data
+        for plugin_name, data in plugin_data.items():
+            if isinstance(data, dict):
+                result["plugin_data_summary"][plugin_name] = {
+                    "keys": list(data.keys()),
+                    "data_count": len(data)
+                }
+
+        return result
+
+    except Exception as e:
+        logger.error(f"Failed to get plugin info: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=str(e)
+        )
+
+
+@router.get("/{session_id}/plugins/{plugin_name}", response_model=SuccessResponse)
+async def get_plugin_data(
+    session_id: str,
+    plugin_name: str,
+    storage: SessionStorage = Depends(get_session_storage),
+):
+    """
+    Get detailed data for a specific plugin
+
+    Returns all stored data for the specified plugin.
+    """
+    session = await storage.get_session(session_id)
+    if not session:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Session {session_id} not found"
+        )
+
+    try:
+        # Load plugin data
+        plugin_data = await storage.load_plugin_data(session_id, plugin_name)
+
+        if not plugin_data:
+            return {
+                "session_id": session_id,
+                "plugin_name": plugin_name,
+                "message": "No data found for this plugin",
+                "data": {}
+            }
+
+        return {
+            "session_id": session_id,
+            "plugin_name": plugin_name,
+            "data": plugin_data
+        }
+
+    except Exception as e:
+        logger.error(f"Failed to get plugin data: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=str(e)

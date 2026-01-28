@@ -1,17 +1,23 @@
 /**
- * Tasks page for workspace
+ * TaskListPanel - 任务列表面板
+ *
+ * 从 Tasks 页面迁移核心逻辑，在主面板中以标签页形式展示
  */
 
-import { useParams } from 'react-router-dom';
+import { useState, useEffect } from 'react';
 import { useTasks, useFilteredTasks } from '@/hooks/useTask';
 import { TaskCard } from '@/components/TaskCard';
 import { Select } from '@/components/ui/Select';
 import { Badge } from '@/components/ui/Badge';
-import { useState, useEffect } from 'react';
 import { useTaskStore } from '@/stores/taskStore';
 import { useToast } from '@/components/ui/Toast';
 import { useWebSocket } from '@/hooks/useWebSocket';
 import apiClient from '@/api/client';
+import logger from '@/utils/logger';
+
+interface TaskListPanelProps {
+  sessionId: string;
+}
 
 const filterOptions = [
   { value: 'all', label: '全部' },
@@ -21,24 +27,21 @@ const filterOptions = [
   { value: 'failed', label: '失败' },
 ];
 
-export const Tasks = () => {
-  const { sessionId } = useParams<{ sessionId: string }>();
-  const { isLoading } = useTasks(sessionId!);
+export const TaskListPanel = ({ sessionId }: TaskListPanelProps) => {
+  const { isLoading } = useTasks(sessionId);
   const { allTasks, getTasksByStatus } = useFilteredTasks();
   const [filter, setFilter] = useState('all');
   const [activeTaskId, setActiveTaskId] = useState<string | null>(null);
   const toast = useToast();
-  const setCurrentSession = useTaskStore((state) => state.setCurrentSession);  // 🔥 新增
-  const progress = useTaskStore((state) => state.progress);  // 🔥 获取进度信息（包含重写状态）
-
-  // 🔥 新增：设置当前会话到 taskStore
-  useEffect(() => {
-    if (sessionId) {
-      console.log('🔄 Tasks: Setting current session:', sessionId);
-      setCurrentSession(sessionId);
-    }
-  }, [sessionId, setCurrentSession]);
+  const setCurrentSession = useTaskStore((state) => state.setCurrentSession);
+  const progress = useTaskStore((state) => state.progress);
   const setCurrentTask = useTaskStore((state) => state.setCurrentTask);
+
+  // 设置当前会话到 taskStore
+  useEffect(() => {
+    logger.debug('🔄 TaskListPanel: Setting current session:', sessionId);
+    setCurrentSession(sessionId);
+  }, [sessionId, setCurrentSession]);
 
   const filteredTasks = filter === 'all'
     ? allTasks
@@ -52,7 +55,7 @@ export const Tasks = () => {
     failed: getTasksByStatus('failed').length,
   };
 
-  // 🔥 计算总统计
+  // 计算总统计
   const completedTasks = getTasksByStatus('completed');
   const totalStats = {
     totalTokens: completedTasks.reduce((sum, t) => sum + (t.total_tokens || 0), 0),
@@ -87,7 +90,7 @@ export const Tasks = () => {
     }
   };
 
-  // WebSocket real-time updates
+  // WebSocket 实时更新
   useWebSocket({
     onTaskUpdate: (data) => {
       const task = data.data;
@@ -101,7 +104,7 @@ export const Tasks = () => {
 
   return (
     <div className="h-full flex flex-col">
-      {/* 🔥 重写状态横幅 */}
+      {/* 重写状态横幅 */}
       {progress?.is_rewriting && (
         <div className="bg-orange-50 border-b border-orange-200 px-4 py-2 animate-pulse">
           <div className="flex items-center gap-2">
@@ -132,24 +135,14 @@ export const Tasks = () => {
 
         {/* Stats */}
         <div className="flex gap-4 flex-wrap">
-          <div className="flex items-center gap-2">
-            <Badge variant="default" size="sm">全部: {stats.total}</Badge>
-          </div>
-          <div className="flex items-center gap-2">
-            <Badge variant="default" size="sm">待执行: {stats.pending}</Badge>
-          </div>
-          <div className="flex items-center gap-2">
-            <Badge variant="info" size="sm">执行中: {stats.running}</Badge>
-          </div>
-          <div className="flex items-center gap-2">
-            <Badge variant="success" size="sm">已完成: {stats.completed}</Badge>
-          </div>
-          <div className="flex items-center gap-2">
-            <Badge variant="danger" size="sm">失败: {stats.failed}</Badge>
-          </div>
+          <Badge variant="default" size="sm">全部: {stats.total}</Badge>
+          <Badge variant="default" size="sm">待执行: {stats.pending}</Badge>
+          <Badge variant="info" size="sm">执行中: {stats.running}</Badge>
+          <Badge variant="success" size="sm">已完成: {stats.completed}</Badge>
+          <Badge variant="danger" size="sm">失败: {stats.failed}</Badge>
         </div>
-        
-        {/* 🔥 总统计信息 */}
+
+        {/* 总统计信息 */}
         {stats.completed > 0 && (
           <div className="mt-3 p-3 bg-gradient-to-r from-blue-50 to-green-50 rounded-lg border">
             <div className="flex flex-wrap gap-4 text-sm">
@@ -183,8 +176,8 @@ export const Tasks = () => {
         ) : filteredTasks.length > 0 ? (
           <div className="grid gap-4">
             {filteredTasks.map((task) => (
-              <TaskCard 
-                key={task.id} 
+              <TaskCard
+                key={task.id}
                 task={task}
                 isActive={task.task_id === activeTaskId}
                 onClick={() => handleTaskClick(task.task_id)}

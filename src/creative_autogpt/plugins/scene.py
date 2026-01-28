@@ -47,10 +47,20 @@ class ScenePlugin(NovelElementPlugin):
     async def on_init(self, context: WritingContext) -> None:
         """Initialize scene plugin with session context"""
         logger.info(f"ScenePlugin initialized for session {context.session_id}")
-        if "scenes" in context.metadata:
-            self._scenes = context.metadata.get("scenes", {})
-        if "atmospheres" in context.metadata:
-            self._atmospheres = context.metadata.get("atmospheres", {})
+
+        # Try to load from database first
+        state = await self.load_state(context)
+        if state:
+            self._scenes = state.get("scenes", {})
+            self._atmospheres = state.get("atmospheres", {})
+            self._sensory_templates = state.get("sensory_templates", {})
+            logger.info(f"Loaded {len(self._scenes)} scenes from database")
+        else:
+            # Fallback to metadata
+            if "scenes" in context.metadata:
+                self._scenes = context.metadata.get("scenes", {})
+            if "atmospheres" in context.metadata:
+                self._atmospheres = context.metadata.get("atmospheres", {})
 
     def get_schema(self) -> Dict[str, Any]:
         """Get JSON schema for scene data"""
@@ -315,7 +325,16 @@ class ScenePlugin(NovelElementPlugin):
 
     async def on_finalize(self, context: WritingContext) -> None:
         """Finalize scene plugin and persist data"""
-        logger.info("ScenePlugin finalized")
+        logger.info(f"ScenePlugin finalized - persisting {len(self._scenes)} scenes")
+
+        # Persist to database
+        await self.persist_all(context, {
+            "scenes": self._scenes,
+            "atmospheres": self._atmospheres,
+            "sensory_templates": self._sensory_templates,
+        })
+
+        # Also store in metadata for compatibility
         context.metadata["scenes"] = self._scenes
         context.metadata["atmospheres"] = self._atmospheres
         context.metadata["sensory_templates"] = self._sensory_templates

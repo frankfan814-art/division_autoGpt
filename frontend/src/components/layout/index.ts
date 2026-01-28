@@ -3,6 +3,8 @@
  */
 
 export { Header } from './Header';
-export { Sidebar } from './Sidebar';
 export { MainLayout } from './MainLayout';
 export { WorkspaceLayout } from './WorkspaceLayout';
+export { CollapsibleSidebar } from './CollapsibleSidebar';
+export { PanelTabBar } from './PanelTabBar';
+export { ResizablePanels } from './ResizablePanels';

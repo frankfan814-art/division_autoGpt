@@ -6,6 +6,7 @@ import { useEffect, useRef, useCallback } from 'react';
 import { getWebSocketClient, WebSocketEventHandler } from '@/api/websocket';
 import { useSessionStore } from '@/stores/sessionStore';
 import { useTaskStore } from '@/stores/taskStore';
+import logger from '@/utils/logger';
 
 export interface UseWebSocketOptions {
   onSessionUpdate?: WebSocketEventHandler;
@@ -47,9 +48,9 @@ export const useWebSocket = (options: UseWebSocketOptions = {}) => {
     const unsubscribeTaskStart = ws.subscribe('task_start', (data) => {
       const { task } = data as any;
       if (task) {
-        console.log('📋 Task started:', task.task_type, 'using', task.llm_provider);
-        console.log('📋 Full task object:', task);
-        console.log('📋 Calling upsertTask with:', task);
+        logger.debug('📋 Task started:', task.task_type, 'using', task.llm_provider);
+        logger.debug('📋 Full task object:', task);
+        logger.debug('📋 Calling upsertTask with:', task);
         upsertTask(task);
         // Update progress with current task info (preserve existing progress data)
         setProgress((prev: any) => {
@@ -78,7 +79,7 @@ export const useWebSocket = (options: UseWebSocketOptions = {}) => {
             task_started_at: task.metadata?.started_at,
             retry_count: task.metadata?.retry_count || 0,
           };
-          console.log('📊 Updated progress after task_start:', updated);
+          logger.debug('📊 Updated progress after task_start:', updated);
           return updated;
         });
       }
@@ -88,8 +89,8 @@ export const useWebSocket = (options: UseWebSocketOptions = {}) => {
     const unsubscribeTaskComplete = ws.subscribe('task_complete', (data) => {
       const { task } = data as any;
       if (task) {
-        console.log('✅ Task complete event received for:', task.task_type);
-        console.log('✅ Task complete stats:', JSON.stringify({
+        logger.debug('✅ Task complete event received for:', task.task_type);
+        logger.debug('✅ Task complete stats:', JSON.stringify({
           execution_time_seconds: task.execution_time_seconds,
           total_tokens: task.total_tokens,
           prompt_tokens: task.prompt_tokens,
@@ -106,7 +107,7 @@ export const useWebSocket = (options: UseWebSocketOptions = {}) => {
     const unsubscribeTaskFail = ws.subscribe('task_fail', (data) => {
       const { task } = data as any;
       if (task) {
-        console.error('❌ Task failed:', task.task_type, task.error);
+        logger.error('❌ Task failed:', task.task_type, task.error);
         upsertTask(task);
       }
       onTaskUpdate?.(data);
@@ -116,7 +117,7 @@ export const useWebSocket = (options: UseWebSocketOptions = {}) => {
     const unsubscribeTaskApprovalNeeded = ws.subscribe('task_approval_needed', (data) => {
       const { task } = data as any;
       if (task) {
-        console.log('⏸️ Task needs approval:', task.task_type);
+        logger.debug('⏸️ Task needs approval:', task.task_type);
         upsertTask(task);
       }
       onTaskUpdate?.(data);
@@ -125,7 +126,7 @@ export const useWebSocket = (options: UseWebSocketOptions = {}) => {
     // Subscribe to progress updates
     const unsubscribeProgress = ws.subscribe('progress', (data) => {
       const { progress: progressData } = data as any;
-      console.log('📊 Progress event received:', progressData);
+      logger.debug('📊 Progress event received:', progressData);
       if (progressData) {
         setProgress(progressData);
       }
@@ -135,7 +136,7 @@ export const useWebSocket = (options: UseWebSocketOptions = {}) => {
     // 🔥 Subscribe to step progress updates (详细步骤进度)
     const unsubscribeStepProgress = ws.subscribe('step_progress', (data) => {
       const { step } = data as any;
-      console.log('📍 Step progress event received:', step);
+      logger.debug('📍 Step progress event received:', step);
       if (step) {
         setStepProgress(step);
       }
@@ -156,7 +157,7 @@ export const useWebSocket = (options: UseWebSocketOptions = {}) => {
           percentage: 100,
           current_task: null,
         }));
-        console.log('🎉 Session completed!', session_id);
+        logger.debug('🎉 Session completed!', session_id);
       }
       onSessionUpdate?.(data);
     });
@@ -181,7 +182,7 @@ export const useWebSocket = (options: UseWebSocketOptions = {}) => {
       // Connection confirmed, initialize progress if provided
       const { progress: initialProgress } = data as any;
       if (initialProgress) {
-        console.log('📊 Initial progress:', initialProgress);
+        logger.debug('📊 Initial progress:', initialProgress);
         setProgress(initialProgress);
       }
       onSessionUpdate?.(data);
@@ -189,7 +190,7 @@ export const useWebSocket = (options: UseWebSocketOptions = {}) => {
 
     // Subscribe to errors
     const unsubscribeError = ws.subscribe('error', (data) => {
-      console.error('WebSocket error event:', data);
+      logger.error('WebSocket error event:', data);
       onError?.(data);
     });
 

@@ -14,6 +14,7 @@ import { useWebSocket } from '@/hooks/useWebSocket';
 import { SessionStatus, Session } from '@/types';
 import { Link } from 'react-router-dom';
 import { useToast } from '@/components/ui/Toast';
+import logger from '@/utils/logger';
 
 const statusOptions = [
   { value: '', label: '全部状态' },
@@ -41,6 +42,7 @@ export const Sessions = () => {
     isLoading,
     deleteSession,
     restoreSession,
+    resumeSession,
     isRestoring,
     resumableSessions,
     refetch,
@@ -95,7 +97,7 @@ export const Sessions = () => {
           await deleteSession(sessionId);
           successCount++;
         } catch (error) {
-          console.error(`删除会话 ${sessionId} 失败:`, error);
+          logger.error(`删除会话 ${sessionId} 失败:`, error);
           failCount++;
         }
       }
@@ -112,7 +114,7 @@ export const Sessions = () => {
         toast.warning(`⚠️ 部分删除成功：成功 ${successCount} 个，失败 ${failCount} 个`);
       }
     } catch (error) {
-      console.error('批量删除失败:', error);
+      logger.error('批量删除失败:', error);
       toast.error('❌ 批量删除失败，请重试');
     } finally {
       setIsDeleting(false);
@@ -130,15 +132,15 @@ export const Sessions = () => {
       // 恢复成功后跳转到工作区
       navigate(`/workspace/${id}`);
     } catch (error: any) {
-      console.error('恢复会话失败:', error);
-      // 🔥 如果 restore 失败（比如没有 engine_state），自动使用 start
-      // start 现在已经支持从已完成任务继续
-      console.log('尝试使用 start 继续执行...');
+      logger.error('恢复会话失败:', error);
+      // 🔥 如果 restore 失败（比如没有 engine_state），自动使用 resume
+      // resume 现在已经支持从已完成任务继续
+      logger.debug('尝试使用 resume 继续执行...');
       try {
-        await startSession(id);
+        await resumeSession(id);
         navigate(`/workspace/${id}`);
-      } catch (startError: any) {
-        console.error('启动会话也失败:', startError);
+      } catch (resumeError: any) {
+        logger.error('恢复会话也失败:', resumeError);
         // 可以显示错误提示
       }
     }
@@ -262,8 +264,8 @@ export const Sessions = () => {
                   <SessionCard
                     session={session}
                     onContinue={(id) => navigate(`/workspace/${id}`)}
-                    onView={(id) => navigate(`/workspace/${id}/preview`)}
-                    onRead={(id) => navigate(`/workspace/${id}/reader`)}
+                    onView={(id) => navigate(`/workspace/${id}`)}
+                    onRead={(id) => navigate(`/workspace/${id}`)}
                     onExport={handleExport}
                     onDelete={deleteSession}
                     onRestore={isResumable(session.id) ? handleRestore : undefined}

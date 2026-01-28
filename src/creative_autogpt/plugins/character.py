@@ -49,11 +49,20 @@ class CharacterPlugin(NovelElementPlugin):
     async def on_init(self, context: WritingContext) -> None:
         """Initialize character plugin with session context"""
         logger.info(f"CharacterPlugin initialized for session {context.session_id}")
-        # Load any existing character data from context
-        if "characters" in context.metadata:
-            self._characters = context.metadata.get("characters", {})
-        if "relationships" in context.metadata:
-            self._relationships = context.metadata.get("relationships", {})
+
+        # Try to load from database first
+        state = await self.load_state(context)
+        if state:
+            self._characters = state.get("characters", {})
+            self._relationships = state.get("relationships", {})
+            self._arcs = state.get("arcs", {})
+            logger.info(f"Loaded {len(self._characters)} characters from database")
+        else:
+            # Fallback to metadata
+            if "characters" in context.metadata:
+                self._characters = context.metadata.get("characters", {})
+            if "relationships" in context.metadata:
+                self._relationships = context.metadata.get("relationships", {})
 
     def get_schema(self) -> Dict[str, Any]:
         """Get JSON schema for character data"""
@@ -499,10 +508,230 @@ class CharacterPlugin(NovelElementPlugin):
         """Get all relationship data"""
         return self._relationships.copy()
 
+    # ========== Character Arc Tracking Methods ==========
+
+    def create_arc(
+        self,
+        character_id: str,
+        arc_name: str,
+        arc_type: str,
+        start_state: Dict[str, Any],
+        end_state: Dict[str, Any],
+        milestone_chapters: Optional[List[int]] = None,
+    ) -> str:
+        """
+        Create a character development arc
+
+        Args:
+            character_id: Character ID
+            arc_name: Name of the arc
+            arc_type: Type of arc (e.g., "growth", "fall", "redemption", "coming_of_age")
+            start_state: Character's state at arc start
+            end_state: Character's state at arc end
+            milestone_chapters: Chapters where key arc events occur
+
+        Returns:
+            Arc ID
+        """
+        import uuid
+        arc_id = str(uuid.uuid4())
+
+        if character_id not in self._arcs:
+            self._arcs[character_id] = []
+
+        arc = {
+            "arc_id": arc_id,
+            "name": arc_name,
+            "type": arc_type,
+            "start_state": start_state,
+            "end_state": end_state,
+            "current_state": start_state.copy(),
+            "milestone_chapters": milestone_chapters or [],
+            "milestones_reached": [],
+            "completed": False,
+            "created_at": datetime.utcnow().isoformat(),
+        }
+
+        self._arcs[character_id].append(arc)
+        logger.info(f"Created arc '{arc_name}' for character {character_id}")
+        return arc_id
+
+    def record_milestone(
+        self,
+        character_id: str,
+        arc_id: str,
+        chapter_index: int,
+        milestone_description: str,
+        state_changes: Optional[Dict[str, Any]] = None,
+    ) -> bool:
+        """
+        Record a milestone in character's arc
+
+        Args:
+            character_id: Character ID
+            arc_id: Arc ID
+            chapter_index: Chapter where milestone occurs
+            milestone_description: Description of the milestone
+            state_changes: Changes to character's state
+
+        Returns:
+            True if successful
+        """
+        if character_id not in self._arcs:
+            logger.warning(f"No arcs found for character {character_id}")
+            return False
+
+        arc = next((a for a in self._arcs[character_id] if a["arc_id"] == arc_id), None)
+        if not arc:
+            logger.warning(f"Arc {arc_id} not found for character {character_id}")
+            return False
+
+        milestone = {
+            "chapter": chapter_index,
+            "description": milestone_description,
+            "state_changes": state_changes or {},
+            "timestamp": datetime.utcnow().isoformat(),
+        }
+
+        arc["milestones_reached"].append(milestone)
+
+        # Update current state if state changes provided
+        if state_changes:
+            arc["current_state"].update(state_changes)
+
+        logger.info(f"Recorded milestone for {character_id} at chapter {chapter_index}")
+        return True
+
+    def complete_arc(
+        self,
+        character_id: str,
+        arc_id: str,
+        final_state: Optional[Dict[str, Any]] = None,
+    ) -> bool:
+        """
+        Mark an arc as completed
+
+        Args:
+            character_id: Character ID
+            arc_id: Arc ID
+            final_state: Final character state (overrides planned end state)
+
+        Returns:
+            True if successful
+        """
+        if character_id not in self._arcs:
+            return False
+
+        arc = next((a for a in self._arcs[character_id] if a["arc_id"] == arc_id), None)
+        if not arc:
+            return False
+
+        arc["completed"] = True
+        arc["completed_at"] = datetime.utcnow().isoformat()
+
+        if final_state:
+            arc["current_state"] = final_state
+
+        logger.info(f"Completed arc '{arc['name']}' for character {character_id}")
+        return True
+
+    def get_character_arcs(self, character_id: str) -> List[Dict[str, Any]]:
+        """Get all arcs for a character"""
+        return self._arcs.get(character_id, []).copy()
+
+    def get_arc_progress(self, character_id: str, arc_id: str) -> Optional[Dict[str, Any]]:
+        """
+        Get arc progress information
+
+        Returns:
+            Dict with progress info or None if not found
+        """
+        arcs = self._arcs.get(character_id, [])
+        arc = next((a for a in arcs if a["arc_id"] == arc_id), None)
+
+        if not arc:
+            return None
+
+        # Calculate progress based on milestones
+        total_milestones = len(arc.get("milestone_chapters", []))
+        reached_milestones = len(arc.get("milestones_reached", []))
+
+        progress = {
+            "arc_id": arc_id,
+            "name": arc["name"],
+            "type": arc["type"],
+            "completed": arc["completed"],
+            "milestones_planned": total_milestones,
+            "milestones_reached": reached_milestones,
+            "progress_percent": (reached_milestones / total_milestones * 100) if total_milestones > 0 else 0,
+            "current_state": arc["current_state"],
+            "start_state": arc["start_state"],
+            "end_state": arc["end_state"],
+        }
+
+        return progress
+
+    def check_arc_consistency(
+        self,
+        character_id: str,
+        current_chapter: int,
+    ) -> ValidationResult:
+        """
+        Check if character's arc progression is consistent
+
+        Args:
+            character_id: Character ID
+            current_chapter: Current chapter index
+
+        Returns:
+            Validation result with arc consistency issues
+        """
+        errors = []
+        warnings = []
+        suggestions = []
+
+        arcs = self._arcs.get(character_id, [])
+
+        for arc in arcs:
+            # Check if milestones are being tracked
+            if arc["milestone_chapters"]:
+                missed_milestones = [
+                    ch for ch in arc["milestone_chapters"]
+                    if ch <= current_chapter and
+                    not any(m["chapter"] == ch for m in arc["milestones_reached"])
+                ]
+
+                if missed_milestones:
+                    warnings.append(
+                        f"Arc '{arc['name']}': Missed milestones at chapters {missed_milestones}"
+                    )
+
+            # Check if arc should be completed
+            if arc["milestone_chapters"] and current_chapter > max(arc["milestone_chapters"]):
+                if not arc["completed"]:
+                    suggestions.append(
+                        f"Arc '{arc['name']}' should be completed - all milestone chapters passed"
+                    )
+
+        return ValidationResult(
+            valid=len(errors) == 0,
+            errors=errors,
+            warnings=warnings,
+            suggestions=suggestions,
+        )
+
     async def on_finalize(self, context: WritingContext) -> None:
         """Finalize character plugin and persist data"""
-        logger.info("CharacterPlugin finalized")
-        # Store final state in context for persistence
+        logger.info(f"CharacterPlugin finalized - persisting {len(self._characters)} characters")
+
+        # Persist to database
+        await self.persist_all(context, {
+            "characters": self._characters,
+            "relationships": self._relationships,
+            "arcs": self._arcs,
+        })
+
+        # Also store in metadata for compatibility
         context.metadata["characters"] = self._characters
         context.metadata["relationships"] = self._relationships
         context.metadata["character_arcs"] = self._arcs

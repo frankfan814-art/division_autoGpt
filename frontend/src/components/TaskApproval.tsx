@@ -201,7 +201,37 @@ export const TaskApproval = ({ task, sessionId, onApprove, onReject, onRegenerat
           {evaluation && (
             <div className="mb-4">
               <h3 className="text-sm font-semibold text-gray-700 mb-2">评估详情</h3>
-              
+
+              {/* 🔥 质量问题 */}
+              {evaluation.quality_issues && evaluation.quality_issues.length > 0 && (
+                <div className="mb-3">
+                  <h4 className="text-xs font-medium text-orange-600 mb-1 flex items-center gap-1">
+                    <span>📝</span>
+                    <span>质量问题：</span>
+                  </h4>
+                  <ul className="list-disc list-inside space-y-1 text-sm text-gray-700 bg-orange-50 p-2 rounded">
+                    {evaluation.quality_issues.map((issue, idx) => (
+                      <li key={idx}>{issue}</li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+
+              {/* 🔥 一致性问题 */}
+              {evaluation.consistency_issues && evaluation.consistency_issues.length > 0 && (
+                <div className="mb-3">
+                  <h4 className="text-xs font-medium text-red-600 mb-1 flex items-center gap-1">
+                    <span>🔍</span>
+                    <span>一致性问题：</span>
+                  </h4>
+                  <ul className="list-disc list-inside space-y-1 text-sm text-gray-700 bg-red-50 p-2 rounded">
+                    {evaluation.consistency_issues.map((issue, idx) => (
+                      <li key={idx}>{issue}</li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+
               {evaluation.reasons && evaluation.reasons.length > 0 && (
                 <div className="mb-3">
                   <h4 className="text-xs font-medium text-gray-600 mb-1">问题分析：</h4>

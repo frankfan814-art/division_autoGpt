@@ -100,8 +100,8 @@ export const Home = () => {
                   key={session.id}
                   session={session}
                   onContinue={(id) => navigate(`/workspace/${id}`)}
-                  onView={(id) => navigate(`/workspace/${id}/preview`)}
-                  onRead={(id) => navigate(`/workspace/${id}/reader`)}
+                  onView={(id) => navigate(`/workspace/${id}`)}
+                  onRead={(id) => navigate(`/workspace/${id}`)}
                   onExport={handleExport}
                   onDelete={deleteSession}
                 />

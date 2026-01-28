@@ -12,6 +12,17 @@ echo "================================"
 echo "项目目录: $PROJECT_DIR"
 echo ""
 
+# 激活虚拟环境
+VENV_DIR="$PROJECT_DIR/venv"
+if [ -d "$VENV_DIR" ]; then
+    echo "🔧 激活虚拟环境..."
+    source "$VENV_DIR/bin/activate"
+    echo "  ✅ 虚拟环境已激活"
+else
+    echo "⚠️  未找到虚拟环境 venv/，跳过激活"
+fi
+echo ""
+
 # 检查必要的工具
 if ! command -v python3 &> /dev/null; then
     echo "❌ 错误: 未安装 Python 3"

@@ -81,6 +81,25 @@ class TaskResultModel(Base_Model):
     chapter_index = Column(Integer, nullable=True)
 
 
+class PluginDataModel(Base_Model):
+    """SQLAlchemy model for plugin data persistence"""
+
+    __tablename__ = "plugin_data"
+
+    id = Column(String, primary_key=True)
+    session_id = Column(String, nullable=False, index=True)
+    plugin_name = Column(String, nullable=False, index=True)
+    data_key = Column(String, nullable=False, index=True)
+    data_value = Column(JSON, nullable=False)
+    created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+    updated_at = Column(DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    # Composite index for efficient plugin data retrieval
+    __table_args__ = (
+        {'sqlite_autoincrement': True}
+    )
+
+
 class SessionStorage:
     """
     Storage for writing sessions
@@ -482,6 +501,8 @@ class SessionStorage:
                         "retry_count": metadata.get("retry_count"),
                         "llm_provider": metadata.get("llm_provider"),
                         "llm_model": metadata.get("llm_model"),
+                        "prompt": metadata.get("prompt"),  # 🔥 添加提示词字段
+                        "prompt_length": metadata.get("prompt_length"),  # 🔥 添加提示词长度
                         "metadata": metadata,  # Keep full metadata for reference
                     })
                 
@@ -503,6 +524,12 @@ class SessionStorage:
             # Delete task results
             stmt = delete(TaskResultModel).where(
                 TaskResultModel.session_id == session_id
+            )
+            await session.execute(stmt)
+
+            # Delete plugin data
+            stmt = delete(PluginDataModel).where(
+                PluginDataModel.session_id == session_id
             )
             await session.execute(stmt)
 
@@ -608,6 +635,114 @@ class SessionStorage:
                 }
                 for s in sessions
             ]
+
+    async def save_plugin_data(
+        self,
+        session_id: str,
+        plugin_name: str,
+        data_key: str,
+        data_value: Any,
+    ) -> bool:
+        """
+        Save plugin data to database
+
+        Args:
+            session_id: The session ID
+            plugin_name: Name of the plugin
+            data_key: Key for the data
+            data_value: Data to store (must be JSON-serializable)
+
+        Returns:
+            True if successful
+        """
+        async with self.session_factory() as session:
+            # Check if data already exists
+            stmt = select(PluginDataModel).filter(
+                PluginDataModel.session_id == session_id,
+                PluginDataModel.plugin_name == plugin_name,
+                PluginDataModel.data_key == data_key,
+            )
+            existing = await session.execute(stmt)
+            existing_data = existing.scalar_one_or_none()
+
+            if existing_data:
+                # Update existing
+                existing_data.data_value = data_value
+            else:
+                # Create new
+                plugin_data = PluginDataModel(
+                    id=str(uuid.uuid4()),
+                    session_id=session_id,
+                    plugin_name=plugin_name,
+                    data_key=data_key,
+                    data_value=data_value,
+                )
+                session.add(plugin_data)
+
+            await session.commit()
+            return True
+
+    async def load_plugin_data(
+        self,
+        session_id: str,
+        plugin_name: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """
+        Load plugin data from database
+
+        Args:
+            session_id: The session ID
+            plugin_name: Optional plugin name filter
+
+        Returns:
+            Dict of data_key -> data_value
+        """
+        async with self.session_factory() as session:
+            stmt = select(PluginDataModel).filter(
+                PluginDataModel.session_id == session_id
+            )
+
+            if plugin_name:
+                stmt = stmt.filter(PluginDataModel.plugin_name == plugin_name)
+
+            result = await session.execute(stmt)
+            plugin_data_list = result.scalars().all()
+
+            # Return as nested dict: {plugin_name: {data_key: data_value}}
+            output = {}
+            for data in plugin_data_list:
+                if data.plugin_name not in output:
+                    output[data.plugin_name] = {}
+                output[data.plugin_name][data.data_key] = data.data_value
+
+            return output if not plugin_name else output.get(plugin_name, {})
+
+    async def delete_plugin_data(
+        self,
+        session_id: str,
+        plugin_name: Optional[str] = None,
+    ) -> bool:
+        """
+        Delete plugin data from database
+
+        Args:
+            session_id: The session ID
+            plugin_name: Optional plugin name filter (if None, deletes all plugin data for session)
+
+        Returns:
+            True if successful
+        """
+        async with self.session_factory() as session:
+            stmt = delete(PluginDataModel).where(
+                PluginDataModel.session_id == session_id
+            )
+
+            if plugin_name:
+                stmt = stmt.where(PluginDataModel.plugin_name == plugin_name)
+
+            await session.execute(stmt)
+            await session.commit()
+            return True
 
     async def close(self) -> None:
         """Close database connection"""

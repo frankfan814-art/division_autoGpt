@@ -37,14 +37,14 @@ export const Create = () => {
   const { createSession, isCreating } = useSessions();
 
   const [useSmartCreate, setUseSmartCreate] = useState(false);
-  const [userInput, setUserInput] = useState('');
+  const [userInput, setUserInput] = useState('我在大宋送外卖，送成了首富。历史穿越。爽文。历史穿越文。'); // 🔥 默认创作想法
   const [isEnhancing, setIsEnhancing] = useState(false);
 
   const [title, setTitle] = useState('');
   const [mode, setMode] = useState('novel');
   const [authorStyle, setAuthorStyle] = useState(''); // 作者风格
   const [chapterWordCount, setChapterWordCount] = useState('2500'); // 每章字数，默认2500
-  const [wordCount, setWordCount] = useState('50000'); // 默认5万字
+  const [wordCount, setWordCount] = useState('10000'); // 🔥 默认1万字
   const [approvalMode, setApprovalMode] = useState(true); // 默认开启审核模式
   const [genre, setGenre] = useState('');
   const [style, setStyle] = useState('');

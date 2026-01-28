@@ -54,15 +54,26 @@ class WorldViewPlugin(NovelElementPlugin):
     async def on_init(self, context: WritingContext) -> None:
         """Initialize worldview plugin with session context"""
         logger.info(f"WorldViewPlugin initialized for session {context.session_id}")
-        # Load any existing worldview data from context
-        if "world_settings" in context.metadata:
-            self._world_settings = context.metadata.get("world_settings", {})
-        if "power_systems" in context.metadata:
-            self._power_systems = context.metadata.get("power_systems", {})
-        if "factions" in context.metadata:
-            self._factions = context.metadata.get("factions", {})
-        if "locations" in context.metadata:
-            self._locations = context.metadata.get("locations", {})
+
+        # Try to load from database first
+        state = await self.load_state(context)
+        if state:
+            self._world_settings = state.get("world_settings", {})
+            self._power_systems = state.get("power_systems", {})
+            self._factions = state.get("factions", {})
+            self._locations = state.get("locations", {})
+            self._lore = state.get("lore", [])
+            logger.info(f"Loaded worldview data from database")
+        else:
+            # Fallback to metadata
+            if "world_settings" in context.metadata:
+                self._world_settings = context.metadata.get("world_settings", {})
+            if "power_systems" in context.metadata:
+                self._power_systems = context.metadata.get("power_systems", {})
+            if "factions" in context.metadata:
+                self._factions = context.metadata.get("factions", {})
+            if "locations" in context.metadata:
+                self._locations = context.metadata.get("locations", {})
 
     def get_schema(self) -> Dict[str, Any]:
         """Get JSON schema for worldview data"""
@@ -575,7 +586,18 @@ class WorldViewPlugin(NovelElementPlugin):
 
     async def on_finalize(self, context: WritingContext) -> None:
         """Finalize worldview plugin and persist data"""
-        logger.info("WorldViewPlugin finalized")
+        logger.info(f"WorldViewPlugin finalized - persisting {len(self._factions)} factions")
+
+        # Persist to database
+        await self.persist_all(context, {
+            "world_settings": self._world_settings,
+            "power_systems": self._power_systems,
+            "factions": self._factions,
+            "locations": self._locations,
+            "lore": self._lore,
+        })
+
+        # Also store in metadata for compatibility
         context.metadata["world_settings"] = self._world_settings
         context.metadata["power_systems"] = self._power_systems
         context.metadata["factions"] = self._factions

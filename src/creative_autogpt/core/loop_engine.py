@@ -32,6 +32,7 @@ from creative_autogpt.core.vector_memory import (
 )
 from creative_autogpt.core.self_evaluator import SelfEvaluator
 from creative_autogpt.core.prompt_evolver import get_prompt_evolver
+from creative_autogpt.core.chapter_continuity import ChapterContinuityManager
 from creative_autogpt.utils.llm_client import (
     MultiLLMClient,
 )
@@ -118,6 +119,7 @@ class LoopEngine:
         evaluator: EvaluationEngine,
         config: Optional[Dict[str, Any]] = None,
         session_storage = None,  # 🔥 添加 session_storage 参数（可选）
+        plugin_manager = None,  # 🔥 添加插件管理器（可选）
     ):
         """
         Initialize loop engine
@@ -129,6 +131,7 @@ class LoopEngine:
             evaluator: Quality evaluation engine
             config: Optional configuration
             session_storage: Optional session storage for updating rewrite state
+            plugin_manager: Optional plugin manager for element plugins
         """
         self.session_id = session_id
         self.llm_client = llm_client
@@ -136,6 +139,7 @@ class LoopEngine:
         self.evaluator = evaluator
         self.config = config or {}
         self.session_storage = session_storage  # 🔥 保存 session_storage
+        self.plugin_manager = plugin_manager  # 🔥 保存插件管理器
 
         # Create task planner
         self.planner = TaskPlanner(config=config)
@@ -143,6 +147,9 @@ class LoopEngine:
         # 自我评估和提示词进化系统
         self.self_evaluator = SelfEvaluator(llm_client=llm_client)
         self.prompt_evolver = get_prompt_evolver(llm_client=llm_client)
+
+        # 章节连贯性管理器
+        self.chapter_continuity_manager = ChapterContinuityManager(llm_client)
 
         # 是否启用自我进化（默认启用）
         self.enable_self_evolution = config.get('enable_self_evolution', True)
@@ -229,6 +236,23 @@ class LoopEngine:
 
         logger.info(f"Starting execution for session {self.session_id}")
         logger.info(f"Goal: {goal.get('title', 'Untitled')}")
+
+        # 🔥 初始化插件系统
+        if self.plugin_manager:
+            from creative_autogpt.plugins.base import WritingContext
+            plugin_context = WritingContext(
+                session_id=self.session_id,
+                goal=goal,
+                current_task=None,
+                current_chapter=None,
+                results={},
+                metadata=self.config,
+            )
+            try:
+                await self.plugin_manager.initialize_all(plugin_context)
+                logger.info(f"✅ Plugin system initialized with {len(self.plugin_manager.list_enabled())} enabled plugins")
+            except Exception as e:
+                logger.error(f"❌ Failed to initialize plugins: {e}")
 
         try:
             # Phase 1: Planning
@@ -323,6 +347,23 @@ class LoopEngine:
         finally:
             self.is_running = False
 
+            # 🔥 清理插件系统
+            if self.plugin_manager:
+                from creative_autogpt.plugins.base import WritingContext
+                plugin_context = WritingContext(
+                    session_id=self.session_id,
+                    goal=goal,
+                    current_task=None,
+                    current_chapter=None,
+                    results={},
+                    metadata=self.config,
+                )
+                try:
+                    await self.plugin_manager.finalize_all(plugin_context)
+                    logger.info("✅ Plugin system finalized")
+                except Exception as e:
+                    logger.error(f"❌ Failed to finalize plugins: {e}")
+
     async def _execute_task(
         self,
         task: Task,
@@ -396,7 +437,42 @@ class LoopEngine:
                 task_id=task.task_id,
                 task_type=task.task_type.value
             )
+
+            # 🔥 调用插件的 before_task 钩子（让插件可以修改任务配置）
+            if self.plugin_manager:
+                from creative_autogpt.plugins.base import WritingContext
+                plugin_context = WritingContext(
+                    session_id=self.session_id,
+                    goal=goal,
+                    current_task=task.to_dict(),
+                    current_chapter=task.metadata.get("chapter_index"),
+                    results=context.recent_results,
+                    metadata=self.config,
+                )
+                try:
+                    modified_task_dict = await self.plugin_manager.before_task(task.to_dict(), plugin_context)
+                    # 如果插件修改了任务，更新任务对象（注意：这里简化处理，实际可能需要更复杂的逻辑）
+                    if modified_task_dict != task.to_dict():
+                        logger.debug(f"Plugin modified task {task.task_id}")
+                except Exception as e:
+                    logger.error(f"Plugin before_task hook failed: {e}")
+
             prompt = await self._build_prompt(task, context, goal)
+
+            # 🔥 存储提示词到任务元数据（供前端显示）
+            task.metadata["prompt"] = prompt
+            task.metadata["prompt_length"] = len(prompt)
+            logger.debug(f"Stored prompt for task {task.task_id}, length: {len(prompt)}")
+
+            # 🔥 发送提示词构建完成事件（包含提示词内容）
+            await self._send_step_progress(
+                step="prompt_built",
+                message=f"✅ 提示词构建完成 (长度: {len(prompt)} 字符)",
+                task_id=task.task_id,
+                task_type=task.task_type.value,
+                prompt=prompt,  # 🔥 添加提示词内容
+                prompt_length=len(prompt)
+            )
 
             # 3. Call LLM to generate content
             provider_name = {
@@ -446,135 +522,114 @@ class LoopEngine:
                 content_length=len(response.content)
             )
 
-            # 4. Evaluate quality
-            # 🔥 创意脑暴不需要质量评估（前期创意阶段，可以天马行空）
-            # 故事核心需要质量评估，但不需要一致性检查
-            skip_evaluation = task.task_type.value == "创意脑暴"
-
-            if skip_evaluation:
-                # 创建默认通过的评估结果
-                from creative_autogpt.core.evaluator import EvaluationResult
-                evaluation = EvaluationResult(
-                    passed=True,
-                    score=1.0,
-                    quality_score=1.0,
-                    consistency_score=1.0,
-                    reasons=[f"{task.task_type.value}是创意阶段，无需质量评估"],
-                    suggestions=[],
-                    quality_issues=[],
-                    consistency_issues=[],
-                    evaluator="skipped",
-                    metadata={"task_type": task.task_type.value, "skipped_reason": "creative_brainstorm"}
-                )
-                quality_score = 1.0
-                consistency_score = 1.0
-
-                await self._send_step_progress(
-                    step="evaluation_skipped",
-                    message=f"⏭️ {task.task_type.value}属于创意阶段，跳过质量评估（可以天马行空）",
-                    task_id=task.task_id,
-                    task_type=task.task_type.value
-                )
-            else:
-                await self._send_step_progress(
-                    step="evaluation_start",
-                    message=f"📊 正在评估内容质量...",
-                    task_id=task.task_id,
-                    task_type=task.task_type.value
-                )
-
-                evaluation = await self.evaluator.evaluate(
-                    task_type=task.task_type.value,
-                    content=response.content,
-                    context=context.to_dict(),
+            # 🔥 调用插件的 after_task 钩子（让插件可以修改生成的内容）
+            if self.plugin_manager:
+                from creative_autogpt.plugins.base import WritingContext
+                plugin_context = WritingContext(
+                    session_id=self.session_id,
                     goal=goal,
+                    current_task=task.to_dict(),
+                    current_chapter=task.metadata.get("chapter_index"),
+                    results=context.recent_results,
+                    metadata=self.config,
                 )
+                try:
+                    modified_content = await self.plugin_manager.after_task(task.to_dict(), response.content, plugin_context)
+                    if modified_content != response.content:
+                        logger.info(f"Plugin modified content for task {task.task_id}")
+                        response.content = modified_content
+                except Exception as e:
+                    logger.error(f"Plugin after_task hook failed: {e}")
 
-                # 🔥 获取质量评分和一致性评分
-                quality_score = getattr(evaluation, "quality_score", evaluation.score)
-                consistency_score = getattr(evaluation, "consistency_score", evaluation.score)
+            # 4. Evaluate quality
+            # 🔥 所有任务都需要评估，包括创意脑暴
+            # 创意脑暴检查与用户输入的一致性，其他任务检查前置任务一致性
+            await self._send_step_progress(
+                step="evaluation_start",
+                message=f"📊 正在评估内容质量...",
+                task_id=task.task_id,
+                task_type=task.task_type.value
+            )
 
-                # 🔥 发送评估完成事件
-                await self._send_step_progress(
-                    step="evaluation_complete",
-                    message=f"📊 评估完成: 质量评分 {quality_score*10:.1f}/10, 一致性评分 {consistency_score*10:.1f}/10",
-                    task_id=task.task_id,
-                    task_type=task.task_type.value,
-                    quality_score=quality_score,
-                    consistency_score=consistency_score,
-                    passed=evaluation.passed
-                )
+            # 🔥 获取前置任务内容和章节上下文（用于跨任务一致性检查）
+            task_type = task.task_type.value
+            chapter_index = task.metadata.get("chapter_index", None)
+
+            predecessor_contents = None
+            chapter_context_str = None
+
+            # 🔥 创意脑暴：基于用户输入进行一致性检查
+            if task_type == "创意脑暴":
+                # 将用户输入转换为前置内容格式，用于检查是否违背用户原始要求
+                user_input_section = "### 用户创建项目时的原始输入\n\n"
+                if goal.get('title'):
+                    user_input_section += f"**项目标题**：{goal['title']}\n"
+                if goal.get('genre'):
+                    user_input_section += f"**类型/流派**：{goal['genre']}\n"
+                if goal.get('style'):
+                    user_input_section += f"**写作风格**：{goal['style']}\n"
+                if goal.get('requirement'):
+                    user_input_section += f"**创作要求**：{goal['requirement']}\n"
+                if goal.get('word_count'):
+                    wc = goal['word_count']
+                    user_input_section += f"**目标字数**：{wc // 10000}万字\n" if wc >= 10000 else f"**目标字数**：{wc}字\n"
+                if goal.get('chapter_count'):
+                    user_input_section += f"**章节数量**：{goal['chapter_count']}章\n"
+
+                predecessor_contents = {"用户输入": user_input_section}
+
+            # 🔥 故事核心：基于脑暴结果
+            elif task_type == "故事核心":
+                # 故事核心需要检查与脑暴结果的一致性，但脑暴结果已在 context 中
+                predecessor_contents = self._get_predecessor_contents(task_type, context)
+
+            # 🔥 其他任务：检查前置任务
+            else:
+                predecessor_contents = self._get_predecessor_contents(task_type, context)
+
+                # 对于章节相关任务，额外获取章节上下文
+                if task_type in ["章节内容", "章节润色"] and chapter_index and isinstance(chapter_index, int):
+                    previous_chapters = await self._get_previous_chapters(chapter_index, context, max_chapters=3)
+                    outline_content = predecessor_contents.get("大纲", "") if predecessor_contents else ""
+                    chapter_context_str = self._build_consistency_check_context(
+                        chapter_index,
+                        previous_chapters,
+                        outline_content,
+                        task_type,
+                    )
+
+            evaluation = await self.evaluator.evaluate(
+                task_type=task.task_type.value,
+                content=response.content,
+                context=context.to_dict(),
+                goal=goal,
+                predecessor_contents=predecessor_contents,
+                chapter_context=chapter_context_str,
+            )
+
+            # 🔥 获取质量评分和一致性评分
+            quality_score = getattr(evaluation, "quality_score", evaluation.score)
+            consistency_score = getattr(evaluation, "consistency_score", evaluation.score)
+
+            # 🔥 发送评估完成事件
+            await self._send_step_progress(
+                step="evaluation_complete",
+                message=f"📊 评估完成: 质量评分 {quality_score*10:.1f}/10, 一致性评分 {consistency_score*10:.1f}/10",
+                task_id=task.task_id,
+                task_type=task.task_type.value,
+                quality_score=quality_score,
+                consistency_score=consistency_score,
+                passed=evaluation.passed
+            )
 
             # 4.5 总览检查：确保任务输出与前面任务保持一致
-            # 🔥 只有创意脑暴不需要一致性检查（天马行空阶段，无需检查）
-            # 故事核心需要一致性检查（确保符合脑暴的内容）
-            skip_consistency_check = task.task_type.value == "创意脑暴"
+            # 🔥 已合并到质量评估中，不再需要单独的一致性检查
+            # 跨任务一致性和章节连贯性检查已在 evaluator.evaluate() 中完成
+            skip_consistency_check = True  # 始终跳过单独的一致性检查
 
             if skip_consistency_check:
                 consistency_check = {"passed": True, "issues": [], "suggestions": []}
-                await self._send_step_progress(
-                    step="consistency_check_skipped",
-                    message=f"⏭️ 创意脑暴阶段，跳过一致性检查（可以天马行空）",
-                    task_id=task.task_id,
-                    task_type=task.task_type.value
-                )
-            else:
-                await self._send_step_progress(
-                    step="consistency_check_start",
-                    message=f"🔍 正在检查逻辑一致性...",
-                    task_id=task.task_id,
-                    task_type=task.task_type.value
-                )
-
-                consistency_check = await self._check_task_consistency(
-                    task=task,
-                    content=response.content,
-                    context=context,
-                    goal=goal,
-                )
-
-                # 🔥 发送一致性检查完成事件
-                if consistency_check.get("passed", True):
-                    await self._send_step_progress(
-                        step="consistency_check_complete",
-                        message=f"✅ 一致性检查通过",
-                        task_id=task.task_id,
-                        task_type=task.task_type.value,
-                        consistency_passed=True
-                    )
-                else:
-                    await self._send_step_progress(
-                        step="consistency_check_complete",
-                        message=f"⚠️ 一致性检查未通过 (发现 {len(consistency_check.get('issues', []))} 个问题)",
-                        task_id=task.task_id,
-                        task_type=task.task_type.value,
-                        consistency_passed=False,
-                        consistency_issues=consistency_check.get('issues', [])[:3]
-                    )
-
-            if not skip_consistency_check and not consistency_check.get("passed", True):
-                logger.warning(
-                    f"Task {task.task_id} failed consistency check: {consistency_check.get('issues', [])}"
-                )
-                # 将一致性问题添加到评估原因和建议中
-                issues = consistency_check.get('issues', [])
-                suggestions = consistency_check.get('suggestions', [])
-                continuity_issues = consistency_check.get('continuity_issues', [])
-
-                # 🔥 将完整的一致性检查结果存储到任务元数据中，供重写时使用
-                task.metadata["consistency_check_result"] = consistency_check
-
-                # 添加到评估原因（区分一致性问题和连贯性问题）
-                if issues:
-                    evaluation.reasons.append(f"【一致性问题】{chr(10).join(issues)}")
-                if continuity_issues:
-                    evaluation.reasons.append(f"【章节连贯性问题】{chr(10).join(continuity_issues)}")
-
-                # 添加建议
-                if suggestions:
-                    evaluation.suggestions.extend(suggestions)
-
-                evaluation.passed = False
+                # 不再发送跳过事件，因为一致性检查已合并到质量评估中
 
             # 5. Handle evaluation result
             final_content = response.content
@@ -888,12 +943,33 @@ class LoopEngine:
         try:
             # 1. 深度自我评估
             logger.info(f"🔍 开始自我评估任务: {task_type}")
-            
+
+            # 🔥 获取前置任务内容和章节上下文（用于自我评估）
+            chapter_index = task.metadata.get("chapter_index", None)
+
+            predecessor_contents = None
+            chapter_context_str = None
+
+            if task_type not in ["创意脑暴", "故事核心"]:
+                predecessor_contents = self._get_predecessor_contents(task_type, context)
+
+                if task_type in ["章节内容", "章节润色"] and chapter_index and isinstance(chapter_index, int):
+                    previous_chapters = await self._get_previous_chapters(chapter_index, context, max_chapters=3)
+                    outline_content = predecessor_contents.get("大纲", "") if predecessor_contents else ""
+                    chapter_context_str = self._build_consistency_check_context(
+                        chapter_index,
+                        previous_chapters,
+                        outline_content,
+                        task_type,
+                    )
+
             self_eval_result = await self.self_evaluator.evaluate(
                 task_type=task_type,
                 content=content,
                 context=context.to_dict() if hasattr(context, 'to_dict') else {},
                 goal=goal,
+                predecessor_contents=predecessor_contents,
+                chapter_context=chapter_context_str,
             )
             
             # 2. 记录提示词性能
@@ -1842,6 +1918,94 @@ class LoopEngine:
         
         return "".join(sections)
 
+    def _build_brainstorm_prompt_simple(self, goal: Dict[str, Any]) -> str:
+        """
+        为创意脑暴任务构建简洁的提示词
+
+        只包含项目创建时的上下文，移除不必要的约束和写作指导
+        """
+        # 提取项目基础信息
+        title = goal.get("title", "")
+        genre = goal.get("genre", "")
+        style = goal.get("style", "")
+        requirement = goal.get("requirement", "")
+        word_count = goal.get("word_count", 0)
+        chapter_count = goal.get("chapter_count", 0)
+
+        # 格式化字数显示
+        if word_count >= 10000:
+            word_display = f"{word_count // 10000}万字"
+        else:
+            word_display = f"{word_count}字"
+
+        # 构建项目上下文部分
+        context_info = "### 📋 项目基础信息\n\n"
+        if title:
+            context_info += f"**标题**：{title}\n"
+        if genre:
+            context_info += f"**类型**：{genre}\n"
+        if style:
+            context_info += f"**风格**：{style}\n"
+        if requirement:
+            context_info += f"**创作要求**：{requirement}\n"
+        if word_count:
+            context_info += f"**目标字数**：{word_display}\n"
+        if chapter_count:
+            context_info += f"**章节数量**：{chapter_count}章\n"
+
+        # 构建简洁的提示词
+        prompt = f"""## 任务：创意脑暴 🎯
+
+{context_info}
+
+---
+
+### 🎯 你的任务
+
+基于以上项目信息，产生 **4 个独特的故事点子**。
+
+### 每个点子包含：
+
+**故事概念**（2-3句话）- 用"如果...会怎样"的方式描述
+
+### 输出格式：
+
+---
+## 💡 点子一：[标题]
+
+**故事概念**：...
+
+---
+## 💡 点子二：[标题]
+
+**故事概念**：...
+
+---
+## 💡 点子三：[标题]
+
+**故事概念**：...
+
+---
+## 💡 点子四：[标题]
+
+**故事概念**：...
+
+---
+
+## 🏆 推荐点子
+
+**推荐**：点子[X]
+
+**理由**：（简短说明）
+
+⚠️ **要求**：
+- 每个点子 100-200 字
+- 点子之间要有差异
+- 考虑是否能支撑 {chapter_count} 章、{word_display} 的完整小说
+"""
+
+        return prompt
+
     async def _build_prompt(
         self,
         task: Task,
@@ -1850,12 +2014,16 @@ class LoopEngine:
     ) -> str:
         """Build prompt for a task"""
 
-        # Base prompt sections
-        sections = []
-        
         # Get task type value for matching
         task_type = task.task_type.value
-        
+
+        # 🔥 脑暴任务使用专门的简洁提示词
+        if task_type == "创意脑暴":
+            return self._build_brainstorm_prompt_simple(goal)
+
+        # Base prompt sections
+        sections = []
+
         # 🔥 首先构建配置约束部分 - 所有任务都需要看到这些硬性约束
         word_count = goal.get("word_count", 50000)
         chapter_count = goal.get("chapter_count", 10)
@@ -2010,6 +2178,8 @@ class LoopEngine:
             goal_section += f"小说主题: {goal['theme']}\n"
         if goal.get("style"):
             goal_section += f"写作风格: {goal['style']}\n"
+        if goal.get("requirement"):
+            goal_section += f"创作要求: {goal['requirement']}\n"
         if goal.get("length"):
             goal_section += f"预计篇幅: {goal['length']}\n"
         if goal.get("word_count"):
@@ -4184,18 +4354,61 @@ class LoopEngine:
             # 设置合理的范围
             min_words = max(2000, int(words_per_chapter * 0.8))
             max_words = int(words_per_chapter * 1.2)
-            
+
             # 🔥 获取前面章节内容，构建连贯性上下文
             chapter_continuity = ""
+            continuity_framework = ""
             if isinstance(chapter_index, int) and chapter_index > 1:
                 previous_chapters = await self._get_previous_chapters(chapter_index, context, max_chapters=2)
                 outline_content = predecessor_contents.get("大纲", "")
                 chapter_continuity = self._build_chapter_continuity_context(
                     chapter_index, previous_chapters, outline_content
                 )
-            
+
+                # 🎯 生成章节衔接框架（由 ChapterContinuityManager 提供）
+                # 提取上一章结尾（最后500字）
+                previous_chapter_ending = None
+                if (chapter_index - 1) in previous_chapters:
+                    prev_content = previous_chapters[chapter_index - 1].get("content", "")
+                    if prev_content:
+                        previous_chapter_ending = prev_content[-500:] if len(prev_content) > 500 else prev_content
+
+                # 获取当前章节大纲
+                current_chapter_outline = ""
+                for result in (context.recent_results or []):
+                    if result.get("task_type") == "章节大纲" and result.get("chapter_index") == chapter_index:
+                        current_chapter_outline = result.get("content", "")
+                        break
+
+                # 生成衔接框架
+                if previous_chapter_ending or chapter_index == 1:
+                    framework_result = await self.chapter_continuity_manager.generate_continuity_framework(
+                        chapter_index=chapter_index,
+                        previous_chapter_ending=previous_chapter_ending,
+                        chapter_outline=current_chapter_outline,
+                        context={"goal": goal, "config": self.config}
+                    )
+                    # 将框架格式化为提示词
+                    if framework_result.get("opening_framework") or framework_result.get("opening_instructions"):
+                        continuity_framework = f"""
+
+### 🎯 本章衔接框架（请严格参考）
+
+**开头框架指导**：
+{framework_result.get("opening_instructions", "").strip()}
+
+{framework_result.get("opening_framework", "").strip()}
+
+**结尾框架指导**：
+{framework_result.get("closing_instructions", "").strip()}
+
+{framework_result.get("closing_hook_template", "").strip()}
+---
+"""
+
             task_section = f"""
 {chapter_continuity}
+{continuity_framework}
 
 ## 当前任务：第{chapter_index}章 - 章节内容 ✍️
 
@@ -4804,11 +5017,33 @@ class LoopEngine:
                     rewrite_attempt=attempt
                 )
 
+                # 🔥 获取前置任务内容和章节上下文（用于重写评估）
+                task_type = task.task_type.value
+                chapter_index = task.metadata.get("chapter_index", None)
+
+                predecessor_contents = None
+                chapter_context_str = None
+
+                if task_type not in ["创意脑暴", "故事核心"]:
+                    predecessor_contents = self._get_predecessor_contents(task_type, context)
+
+                    if task_type in ["章节内容", "章节润色"] and chapter_index and isinstance(chapter_index, int):
+                        previous_chapters = await self._get_previous_chapters(chapter_index, context, max_chapters=3)
+                        outline_content = predecessor_contents.get("大纲", "") if predecessor_contents else ""
+                        chapter_context_str = self._build_consistency_check_context(
+                            chapter_index,
+                            previous_chapters,
+                            outline_content,
+                            task_type,
+                        )
+
                 new_evaluation = await self.evaluator.evaluate(
                     task_type=task.task_type.value,
                     content=response.content,
                     context=context.to_dict(),
                     goal=goal,
+                    predecessor_contents=predecessor_contents,
+                    chapter_context=chapter_context_str,
                 )
 
                 # 🔥 获取新的评分
