@@ -155,10 +155,9 @@ class SessionRestorer:
             task_results: 任务结果列表
         """
         # 基础任务类型（这些任务的结果会被存储到向量库）
-        # 混合方案：创意脑暴 → 故事核心 → 大纲 → 世界观规则 → 人物设计 → 逐章生成 → 章节润色
+        # 混合方案：创意脑暴 → 大纲 → 世界观规则 → 人物设计 → 逐章生成 → 章节润色
         foundation_tasks = {
             "CREATIVE_BRAINSTORM": MemoryType.GENERAL,
-            "STORY_CORE": MemoryType.GENERAL,
             "OUTLINE": MemoryType.OUTLINE,
             "WORLDVIEW_RULES": MemoryType.WORLDVIEW,
             "CHARACTER_DESIGN": MemoryType.CHARACTER,

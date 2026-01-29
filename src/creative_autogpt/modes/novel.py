@@ -251,9 +251,6 @@ class NovelMode(Mode):
         if task_type == NovelTaskType.CREATIVE_BRAINSTORM.value:
             return self._build_brainstorm_prompt(context, metadata)
 
-        elif task_type == NovelTaskType.STORY_CORE.value:
-            return self._build_story_core_prompt(context, metadata)
-
         elif task_type == NovelTaskType.OUTLINE.value:
             return self._build_outline_prompt(context, metadata)
 
@@ -352,9 +349,9 @@ class NovelMode(Mode):
 ### 📋 前置信息
 """
 
-        # Add relevant context - 只添加故事核心（前置任务）
+        # Add relevant context - 只添加创意脑暴（前置任务）
         for result in context.recent_results:
-            if result.get("task_type") == "故事核心":
+            if result.get("task_type") == "创意脑暴":
                 prompt += f"\n#### {result['task_type']}\n{result['content'][:800]}...\n"
                 break
 

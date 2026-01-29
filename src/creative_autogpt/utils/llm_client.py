@@ -474,8 +474,6 @@ class MultiLLMClient:
         # Planning tasks → Qwen (long context, global memory)
         "创意脑暴": LLMProvider.ALIYUN,
         "creative_brainstorm": LLMProvider.ALIYUN,
-        "故事核心": LLMProvider.ALIYUN,
-        "story_core": LLMProvider.ALIYUN,
         "大纲": LLMProvider.ALIYUN,
         "outline": LLMProvider.ALIYUN,
         "风格元素": LLMProvider.ALIYUN,

@@ -240,8 +240,8 @@ export const TaskCard = ({
 
       {renderEvaluation()}
 
-      {/* 🔥 新增：提示词显示区域 */}
-      {task.metadata?.prompt && (
+      {/* 🔥 提示词显示区域 */}
+      {(task.metadata?.prompt || task.prompt) && (
         <div className="mt-3 border rounded-lg overflow-hidden">
           <button
             onClick={(e) => {
@@ -250,13 +250,13 @@ export const TaskCard = ({
             }}
             className="w-full px-3 py-2 bg-blue-50 hover:bg-blue-100 flex items-center justify-between text-sm font-medium text-blue-700 transition-colors"
           >
-            <span>📝 提示词 ({task.metadata.prompt_length || task.metadata.prompt?.length || 0} 字符)</span>
+            <span>📝 提示词 ({task.metadata?.prompt_length || task.prompt?.length || task.metadata?.prompt?.length || 0} 字符)</span>
             <span className="text-blue-500">{showPrompt ? '▼' : '▶'}</span>
           </button>
           {showPrompt && (
             <div className="p-3 bg-gray-50 max-h-96 overflow-y-auto">
               <pre className="text-xs text-gray-700 whitespace-pre-wrap font-mono">
-                {task.metadata.prompt}
+                {task.metadata?.prompt || task.prompt}
               </pre>
             </div>
           )}

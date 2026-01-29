@@ -302,12 +302,12 @@ class EvaluationEngine:
         # 🔥 新增：前置任务内容（用于跨任务一致性检查）
         predecessor_section = ""
         if predecessor_contents:
-            priority_list = ["故事核心", "人物设计", "世界观规则", "风格元素", "大纲", "伏笔列表", "事件", "场景物品冲突"]
+            priority_list = ["人物设计", "世界观规则", "风格元素", "大纲", "伏笔列表", "事件", "场景物品冲突"]
             predecessor_section = "\n\n### 前面任务的核心成果（必须严格保持一致）\n"
             for pred_type in priority_list:
                 if pred_type in predecessor_contents:
                     pred_content = predecessor_contents[pred_type]
-                    max_len = 4000 if pred_type in ["故事核心", "人物设计", "大纲"] else 2000
+                    max_len = 4000 if pred_type in ["人物设计", "大纲"] else 2000
                     predecessor_section += f"\n#### {pred_type}\n```\n{pred_content[:max_len]}{'...' if len(pred_content) > max_len else ''}\n```\n"
 
         # 🔥 新增：章节上下文（用于章节连贯性检查）
@@ -383,9 +383,9 @@ class EvaluationEngine:
 
 如果提供了【前面任务的核心成果】，请务必检查当前内容与前面任务的**严格一致性**：
 
-1. **故事核心一致性**：
-   - 是否紧扣【故事核心】中定义的主角目标和核心冲突？
-   - 是否服务于故事的核心情感钩子？
+1. **大纲一致性**：
+   - 是否紧扣【大纲】中定义的主角目标和核心冲突？
+   - 是否服务于大纲的核心情感钩子？
 
 2. **人物一致性**：
    - 如果涉及人物，是否使用了【人物设计】中已有的角色？
@@ -402,7 +402,7 @@ class EvaluationEngine:
    - 语言调性是否统一？
 
 5. **主题一致性**：
-   - 是否围绕【故事核心】的核心主题展开？
+   - 是否围绕【大纲】的核心主题展开？
    - 有没有偏离主题、跑题的内容？
 
 ### 📖 章节连贯性检查（如果提供了前面章节内容）

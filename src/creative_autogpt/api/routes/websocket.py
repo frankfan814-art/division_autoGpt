@@ -339,7 +339,6 @@ async def handle_start(
                 # 使用 task_type 映射到 memory_type
                 memory_type_mapping = {
                     "创意脑暴": MemoryType.GENERAL,
-                    "故事核心": MemoryType.GENERAL,
                     "大纲": MemoryType.OUTLINE,
                     "人物设计": MemoryType.CHARACTER,
                     "世界观规则": MemoryType.WORLDVIEW,
@@ -457,6 +456,9 @@ async def handle_start(
                             "retry_count": task.metadata.get("final_retry_count", 0),
                             "llm_provider": task.metadata.get("llm_provider", "unknown"),
                             "llm_model": task.metadata.get("llm_model", "unknown"),
+                            # 🔥 保存提示词到数据库（供前端显示）
+                            "prompt": task.metadata.get("prompt"),
+                            "prompt_length": task.metadata.get("prompt_length"),
                         },
                         evaluation=evaluation.to_dict() if evaluation else None,
                     )

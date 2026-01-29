@@ -51,6 +51,12 @@ export const useWebSocket = (options: UseWebSocketOptions = {}) => {
         logger.debug('📋 Task started:', task.task_type, 'using', task.llm_provider);
         logger.debug('📋 Full task object:', task);
         logger.debug('📋 Calling upsertTask with:', task);
+        // 🔥 调试：检查 prompt 是否存在
+        logger.debug('🔍 Task metadata.prompt exists:', !!task.metadata?.prompt);
+        logger.debug('🔍 Task prompt exists:', !!task.prompt);
+        if (task.metadata?.prompt) {
+          logger.debug('📝 Prompt length:', task.metadata.prompt.length);
+        }
         upsertTask(task);
         // Update progress with current task info (preserve existing progress data)
         setProgress((prev: any) => {
@@ -98,6 +104,12 @@ export const useWebSocket = (options: UseWebSocketOptions = {}) => {
           cost_usd: task.cost_usd,
           failed_attempts: task.failed_attempts,
         }));
+        // 🔥 调试：检查 prompt 是否存在
+        logger.debug('🔍 Task metadata.prompt exists:', !!task.metadata?.prompt);
+        logger.debug('🔍 Task prompt exists:', !!task.prompt);
+        if (task.metadata?.prompt) {
+          logger.debug('📝 Prompt length:', task.metadata.prompt.length);
+        }
         upsertTask(task);
       }
       onTaskUpdate?.(data);
