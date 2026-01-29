@@ -207,16 +207,22 @@ class TaskPlanner:
         # 章节润色任务将在 _create_chapter_tasks 中动态创建
     ]
 
-    def __init__(self, config: Optional[Dict[str, Any]] = None):
+    def __init__(
+        self,
+        config: Optional[Dict[str, Any]] = None,
+        plugin_manager: Optional[Any] = None,
+    ):
         """
         Initialize task planner
 
         Args:
             config: Optional configuration
+            plugin_manager: Optional plugin manager for loading plugin tasks
         """
         self.config = config or {}
         self.task_definitions: Dict[str, TaskDefinition] = {}
         self.tasks: Dict[str, Task] = {}
+        self.plugin_manager = plugin_manager
 
         # Register default task definitions
         for definition in self.DEFAULT_TASK_DEFINITIONS:
@@ -233,6 +239,62 @@ class TaskPlanner:
         """
         self.task_definitions[definition.task_type.value] = definition
         logger.debug(f"Registered task definition: {definition.task_type.value}")
+
+    def _load_plugin_tasks(self) -> List[TaskDefinition]:
+        """
+        Load task definitions from plugins
+
+        Returns:
+            List of task definitions from plugins
+        """
+        if not self.plugin_manager:
+            return []
+
+        plugin_tasks = []
+        try:
+            # Get all task definitions from plugins
+            all_plugin_tasks = self.plugin_manager.get_tasks()
+
+            for task_dict in all_plugin_tasks:
+                task_type_str = task_dict.get("task_type")
+                if not task_type_str:
+                    continue
+
+                # Try to match with existing NovelTaskType enum
+                task_type = None
+                for enum_value in NovelTaskType:
+                    if enum_value.value == task_type_str:
+                        task_type = enum_value
+                        break
+
+                # If not found in enum, skip this task (we only support defined task types)
+                if task_type is None:
+                    logger.debug(f"Skipping plugin task '{task_type_str}' - not in NovelTaskType enum")
+                    continue
+
+                # Mark as plugin task in metadata
+                metadata = task_dict.get("metadata", {})
+                metadata["plugin"] = task_dict.get("plugin", "unknown")
+                metadata["plugin_source"] = True
+
+                definition = TaskDefinition(
+                    task_type=task_type,
+                    description=task_dict.get("description", ""),
+                    depends_on=task_dict.get("depends_on", []),
+                    metadata=metadata,
+                    optional=task_dict.get("optional", False),
+                    can_parallel=task_dict.get("can_parallel", False),
+                    is_foundation=task_dict.get("is_foundation", False),
+                )
+                plugin_tasks.append(definition)
+                logger.debug(f"Loaded plugin task: {task_type_str} from {metadata['plugin']}")
+
+            logger.info(f"Loaded {len(plugin_tasks)} task definitions from plugins")
+
+        except Exception as e:
+            logger.error(f"Failed to load plugin tasks: {e}")
+
+        return plugin_tasks
 
     async def plan(
         self,
@@ -258,6 +320,22 @@ class TaskPlanner:
         for definition in self.DEFAULT_TASK_DEFINITIONS:
             task = self._create_task_from_definition(definition, goal)
             self.tasks[task.task_id] = task
+
+        # 🔥 加载插件任务（插件任务覆盖同类型的硬编码任务）
+        plugin_tasks = self._load_plugin_tasks()
+        for plugin_def in plugin_tasks:
+            # 插件任务覆盖策略：相同 task_type 时，插件版本优先
+            task_type_str = plugin_def.task_type.value
+            if task_type_str in self.task_definitions:
+                logger.info(f"🔥 插件任务覆盖硬编码: {task_type_str} from {plugin_def.metadata.get('plugin')}")
+
+            # 注册插件任务定义（覆盖硬编码版本）
+            self.register_task_definition(plugin_def)
+
+            # 创建任务实例
+            task = self._create_task_from_definition(plugin_def, goal)
+            self.tasks[task.task_id] = task
+            logger.debug(f"Created plugin task: {task_type_str}")
 
         # Create chapter tasks if chapter count specified (逐章生成模式)
         if chapter_count:

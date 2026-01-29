@@ -264,19 +264,28 @@ class NovelElementPlugin(ABC):
 
     def get_dependencies(self) -> List[str]:
         """Get list of plugin dependencies"""
-        return self.dependencies.copy()
+        # Handle both class-level and instance-level dependencies
+        deps = getattr(self, "dependencies", [])
+        if isinstance(deps, list):
+            return list(deps)  # Return a copy
+        return []
 
     def is_enabled(self) -> bool:
         """Check if plugin is enabled"""
-        return self.config.enabled
+        if hasattr(self.config, "enabled"):
+            return self.config.enabled
+        return True  # Default to enabled
 
     def get_priority(self) -> int:
         """Get plugin execution priority"""
-        return self.config.priority
+        if hasattr(self.config, "priority"):
+            return self.config.priority
+        return 50  # Default priority
 
     def get_phases(self) -> List[PluginPhase]:
         """Get phases when plugin should be invoked"""
-        return self.config.phases.copy()
+        phases = self.config.phases if hasattr(self.config, "phases") else []
+        return list(phases)  # Return a copy
 
     async def save_state(
         self,

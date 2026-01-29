@@ -315,12 +315,26 @@ class ForeshadowPlugin(NovelElementPlugin):
             # Get foreshadows to plant in this chapter
             to_plant = self._get_foreshadows_to_plant(chapter_index)
             if to_plant:
-                context["foreshadows_to_plant"] = to_plant
+                # 格式化为可读的提示信息
+                plant_info = []
+                for item in to_plant:
+                    info = f"- {item.get('name', '未知伏笔')}: {item.get('description', '')}"
+                    if item.get('subtlety'):
+                        info += f" (隐蔽程度: {item['subtlety']})"
+                    plant_info.append(info)
+                context["to_plant"] = plant_info
 
             # Get foreshadows to payoff in this chapter
             to_payoff = self._get_foreshadows_to_payoff(chapter_index)
             if to_payoff:
-                context["foreshadows_to_payoff"] = to_payoff
+                # 格式化为可读的提示信息
+                payoff_info = []
+                for item in to_payoff:
+                    info = f"- {item.get('name', '未知伏笔')}: {item.get('description', '')}"
+                    if item.get('plant_chapter'):
+                        info += f" (埋设于第{item['plant_chapter']}章)"
+                    payoff_info.append(info)
+                context["to_payoff"] = payoff_info
 
         return context
 

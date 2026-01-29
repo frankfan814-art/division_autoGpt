@@ -31,7 +31,7 @@ from creative_autogpt.core.vector_memory import (
     MemoryType,
 )
 from creative_autogpt.core.self_evaluator import SelfEvaluator
-from creative_autogpt.core.prompt_evolver import get_prompt_evolver
+from creative_autogpt.core.prompt_evolver import PromptEvolver  # 🔥 改为直接导入类，实现按项目隔离
 from creative_autogpt.core.chapter_continuity import ChapterContinuityManager
 from creative_autogpt.utils.llm_client import (
     MultiLLMClient,
@@ -141,12 +141,16 @@ class LoopEngine:
         self.session_storage = session_storage  # 🔥 保存 session_storage
         self.plugin_manager = plugin_manager  # 🔥 保存插件管理器
 
-        # Create task planner
-        self.planner = TaskPlanner(config=config)
+        # Create task planner (pass plugin_manager for loading plugin tasks)
+        self.planner = TaskPlanner(config=config, plugin_manager=plugin_manager)
 
         # 自我评估和提示词进化系统
         self.self_evaluator = SelfEvaluator(llm_client=llm_client)
-        self.prompt_evolver = get_prompt_evolver(llm_client=llm_client)
+        # 🔥 按项目隔离：创建独立的 PromptEvolver 实例，避免跨项目污染
+        self.prompt_evolver = PromptEvolver(
+            llm_client=llm_client,
+            data_dir=f"data/prompt_evolution/{session_id}"  # 使用 session_id 隔离数据目录
+        )
 
         # 章节连贯性管理器
         self.chapter_continuity_manager = ChapterContinuityManager(llm_client)
@@ -247,6 +251,7 @@ class LoopEngine:
                 current_chapter=None,
                 results={},
                 metadata=self.config,
+                storage=self.session_storage,  # 🔥 传递 storage 用于插件数据持久化
             )
             try:
                 await self.plugin_manager.initialize_all(plugin_context)
@@ -263,6 +268,13 @@ class LoopEngine:
                 goal=goal,
                 chapter_count=chapter_count,
             )
+
+            # 🔥 注册插件任务到 LLM 路由映射
+            if self.plugin_manager:
+                plugin_tasks = self.plugin_manager.get_tasks()
+                if plugin_tasks:
+                    registered = self.llm_client.register_plugin_tasks(plugin_tasks)
+                    logger.info(f"✅ Registered {registered} plugin tasks to LLM routing")
 
             # 🔥 过滤掉已完成的任务
             if self.completed_task_ids:
@@ -448,6 +460,7 @@ class LoopEngine:
                     current_chapter=task.metadata.get("chapter_index"),
                     results=context.recent_results,
                     metadata=self.config,
+                    storage=self.session_storage,  # 🔥 传递 storage 用于插件数据持久化
                 )
                 try:
                     modified_task_dict = await self.plugin_manager.before_task(task.to_dict(), plugin_context)
@@ -457,7 +470,30 @@ class LoopEngine:
                 except Exception as e:
                     logger.error(f"Plugin before_task hook failed: {e}")
 
-            prompt = await self._build_prompt(task, context, goal)
+            # 🔥 上下文增强：让插件为当前任务提供相关上下文
+            if self.plugin_manager:
+                try:
+                    from creative_autogpt.plugins.base import WritingContext
+                    enrich_context = WritingContext(
+                        session_id=self.session_id,
+                        goal=goal,
+                        current_task=task.to_dict(),
+                        current_chapter=task.metadata.get("chapter_index"),
+                        results=context.recent_results,
+                        metadata=self.config,
+                        storage=self.session_storage,
+                    )
+                    enriched = await self.plugin_manager.enrich_context(task.to_dict(), enrich_context.to_dict())
+                    if enriched:
+                        logger.debug(f"Context enriched by plugins for task {task.task_id}")
+                    else:
+                        enriched = {}
+                except Exception as e:
+                    logger.error(f"Plugin enrich_context failed: {e}")
+                    enriched = {}
+
+            # 🔥 构建提示词（传递插件增强的上下文）
+            prompt = await self._build_prompt(task, context, goal, enriched_context=enriched)
 
             # 🔥 存储提示词到任务元数据（供前端显示）
             task.metadata["prompt"] = prompt
@@ -532,6 +568,7 @@ class LoopEngine:
                     current_chapter=task.metadata.get("chapter_index"),
                     results=context.recent_results,
                     metadata=self.config,
+                    storage=self.session_storage,  # 🔥 传递 storage 用于插件数据持久化
                 )
                 try:
                     modified_content = await self.plugin_manager.after_task(task.to_dict(), response.content, plugin_context)
@@ -540,6 +577,88 @@ class LoopEngine:
                         response.content = modified_content
                 except Exception as e:
                     logger.error(f"Plugin after_task hook failed: {e}")
+
+            # 🔥 数据验证：对结构化任务验证解析后的数据
+            if self.plugin_manager:
+                try:
+                    # 定义哪些任务类型需要结构化验证，以及对应的插件
+                    structured_tasks = {
+                        "人物设计": "character",
+                        "人物关系": "character",
+                        "世界观规则": "worldview",
+                        "势力设定": "worldview",
+                        "事件": "event",
+                        "伏笔列表": "foreshadow",
+                        "时间线": "timeline",
+                        "场景物品": "scene",
+                        "对话检查": "dialogue",
+                    }
+
+                    if task_type in structured_tasks:
+                        plugin_name = structured_tasks[task_type]
+                        plugin = self.plugin_manager.get(plugin_name)
+
+                        if plugin:
+                            # 解析 JSON 数据
+                            parsed_data = plugin.handle_json_parse_error(response.content, default_value=None)
+
+                            if parsed_data is not None:
+                                from creative_autogpt.plugins.base import WritingContext
+                                validation_context = WritingContext(
+                                    session_id=self.session_id,
+                                    goal=goal,
+                                    current_task=task.to_dict(),
+                                    current_chapter=task.metadata.get("chapter_index"),
+                                    results=context.recent_results,
+                                    metadata=self.config,
+                                    storage=self.session_storage,
+                                )
+
+                                result = await plugin.validate(parsed_data, validation_context)
+
+                                # 记录验证结果
+                                task.metadata["validation_result"] = {
+                                    "plugin": plugin_name,
+                                    "valid": result.valid,
+                                    "errors": result.errors,
+                                    "warnings": result.warnings,
+                                    "suggestions": result.suggestions,
+                                }
+
+                                if not result.valid:
+                                    logger.warning(f"Plugin '{plugin_name}' validation failed for task {task.task_id}: {result.errors}")
+                                elif result.warnings:
+                                    logger.info(f"Plugin '{plugin_name}' validation warnings for task {task.task_id}: {result.warnings}")
+                                else:
+                                    logger.debug(f"Plugin '{plugin_name}' validation passed for task {task.task_id}")
+                            else:
+                                logger.debug(f"Could not parse structured data for task type {task_type}, skipping validation")
+                    else:
+                        logger.debug(f"Task type '{task_type}' does not require structured validation")
+                except Exception as e:
+                    logger.error(f"Plugin validation failed: {e}")
+
+            # 🔥 跨插件一致性检查：对于章节任务，检查插件间数据的一致性
+            if self.plugin_manager and task_type in ["章节内容", "章节润色"]:
+                try:
+                    from creative_autogpt.plugins.base import WritingContext
+                    consistency_context = WritingContext(
+                        session_id=self.session_id,
+                        goal=goal,
+                        current_task=task.to_dict(),
+                        current_chapter=task.metadata.get("chapter_index"),
+                        results=context.recent_results,
+                        metadata=self.config,
+                        storage=self.session_storage,
+                    )
+                    consistency_result = self.plugin_manager.validate_cross_plugin_consistency(consistency_context)
+                    if consistency_result and not consistency_result.get("consistent", True):
+                        issues = consistency_result.get("issues", [])
+                        if issues:
+                            task.metadata["cross_plugin_issues"] = issues
+                            logger.warning(f"Cross-plugin consistency issues found for task {task.task_id}: {issues}")
+                except Exception as e:
+                    logger.error(f"Cross-plugin consistency check failed: {e}")
 
             # 4. Evaluate quality
             # 🔥 所有任务都需要评估，包括创意脑暴
@@ -739,7 +858,25 @@ class LoopEngine:
                 chapter_index=task.metadata.get("chapter_index"),
                 evaluation=evaluation.to_dict(),
             )
-            
+
+            # 🔥 插件状态同步：让插件之间同步数据
+            if self.plugin_manager:
+                try:
+                    from creative_autogpt.plugins.base import WritingContext
+                    sync_context = WritingContext(
+                        session_id=self.session_id,
+                        goal=goal,
+                        current_task=task.to_dict(),
+                        current_chapter=task.metadata.get("chapter_index"),
+                        results=context.recent_results,
+                        metadata=self.config,
+                        storage=self.session_storage,
+                    )
+                    await self.plugin_manager.sync_plugin_states(sync_context)
+                    logger.debug(f"Plugin states synced after task {task.task_id}")
+                except Exception as e:
+                    logger.error(f"Plugin state sync failed: {e}")
+
             # 6.5 🎯 检查是否为高分内容，记录为示例
             await self._check_and_save_high_score_example(
                 task_type=task.task_type.value,
@@ -1996,11 +2133,214 @@ class LoopEngine:
 
         return prompt
 
+    def _build_plugin_context_section(self, enriched_context: Dict[str, Any]) -> str:
+        """
+        Build plugin context section for prompt
+
+        Args:
+            enriched_context: Context data from plugins
+
+        Returns:
+            Formatted context section
+        """
+        if not enriched_context:
+            return ""
+
+        sections = []
+
+        sections.append("""
+╔══════════════════════════════════════════════════════════════════╗
+║  🔌 插件增强上下文 - 智能元素管理系统提供的额外信息            ║
+╚══════════════════════════════════════════════════════════════════╝
+
+""")
+
+        # Process different plugin data types
+        for plugin_name, plugin_data in enriched_context.items():
+            if not plugin_data:
+                continue
+
+            # Format plugin data based on type
+            if plugin_name == "character":
+                sections.append(self._format_character_context(plugin_data))
+            elif plugin_name == "worldview":
+                sections.append(self._format_worldview_context(plugin_data))
+            elif plugin_name == "event":
+                sections.append(self._format_event_context(plugin_data))
+            elif plugin_name == "foreshadow":
+                sections.append(self._format_foreshadow_context(plugin_data))
+            else:
+                # Generic formatting for unknown plugin types
+                sections.append(f"\n### 🔌 {plugin_name.title()} 插件数据\n")
+                if isinstance(plugin_data, dict):
+                    for key, value in plugin_data.items():
+                        if value:
+                            sections.append(f"**{key}**: {value}\n")
+                elif isinstance(plugin_data, str):
+                    sections.append(f"{plugin_data}\n")
+                else:
+                    sections.append(f"{str(plugin_data)[:500]}\n")
+
+        return "".join(sections)
+
+    def _format_character_context(self, character_data: Dict[str, Any]) -> str:
+        """Format character plugin data"""
+        sections = []
+
+        sections.append("\n### 👥 角色信息（来自角色管理插件）\n")
+
+        # Current scene characters
+        if "current_scene_characters" in character_data:
+            chars = character_data["current_scene_characters"]
+            if chars:
+                sections.append("**当前场景角色**：\n")
+                for char in chars:
+                    name = char.get("name", "未知")
+                    role = char.get("role", "")
+                    location = char.get("location", "")
+                    mood = char.get("mood", "")
+                    sections.append(f"- {name} ({role})")
+                    if location:
+                        sections.append(f" - 位置: {location}")
+                    if mood:
+                        sections.append(f" - 状态: {mood}")
+                    sections.append("\n")
+
+        # Character relationships
+        if "relationships" in character_data:
+            rels = character_data["relationships"]
+            if rels:
+                sections.append("**角色关系**：\n")
+                for rel in rels[:5]:  # Limit to 5 relationships
+                    char1 = rel.get("character1", "")
+                    char2 = rel.get("character2", "")
+                    rel_type = rel.get("type", "")
+                    sections.append(f"- {char1} ↔ {char2}: {rel_type}\n")
+
+        return "".join(sections)
+
+    def _format_worldview_context(self, worldview_data: Dict[str, Any]) -> str:
+        """Format worldview plugin data"""
+        sections = []
+
+        sections.append("\n### 🌍 世界观信息（来自世界观插件）\n")
+
+        # Current location
+        if "current_location" in worldview_data:
+            loc = worldview_data["current_location"]
+            if loc:
+                sections.append(f"**当前场景**：{loc}\n")
+
+        # World rules
+        if "relevant_rules" in worldview_data:
+            rules = worldview_data["relevant_rules"]
+            if rules:
+                sections.append("**相关世界规则**：\n")
+                for rule in rules[:3]:  # Limit to 3 rules
+                    sections.append(f"- {rule}\n")
+
+        return "".join(sections)
+
+    def _format_event_context(self, event_data: Dict[str, Any]) -> str:
+        """Format event plugin data"""
+        sections = []
+
+        sections.append("\n### ⚡ 事件信息（来自事件插件）\n")
+
+        # Current events
+        if "current_events" in event_data:
+            events = event_data["current_events"]
+            if events:
+                sections.append("**当前相关事件**：\n")
+                for event in events[:3]:
+                    name = event.get("name", "")
+                    status = event.get("status", "")
+                    sections.append(f"- {name} ({status})\n")
+
+        return "".join(sections)
+
+    def _format_foreshadow_context(self, foreshadow_data: Dict[str, Any]) -> str:
+        """Format foreshadow plugin data"""
+        sections = []
+
+        sections.append("\n### 🔮 伏笔信息（来自伏笔插件）\n")
+
+        # Foreshadows to plant
+        if "to_plant" in foreshadow_data:
+            to_plant = foreshadow_data["to_plant"]
+            if to_plant:
+                sections.append("**需要埋设的伏笔**：\n")
+                for item in to_plant[:2]:
+                    sections.append(f"- {item}\n")
+
+        # Foreshadows to payoff
+        if "to_payoff" in foreshadow_data:
+            to_payoff = foreshadow_data["to_payoff"]
+            if to_payoff:
+                sections.append("**需要回收的伏笔**：\n")
+                for item in to_payoff[:2]:
+                    sections.append(f"- {item}\n")
+
+        return "".join(sections)
+
+    async def _build_prompt_from_plugin(
+        self,
+        task: Task,
+        context: MemoryContext,
+        goal: Dict[str, Any],
+    ) -> Optional[str]:
+        """
+        Build prompt from plugin system
+
+        Args:
+            task: The task to build prompt for
+            context: Memory context
+            goal: Creation goal
+
+        Returns:
+            Prompt string from plugin, or None if not available
+        """
+        if not self.plugin_manager:
+            return None
+
+        # Get plugin name from task metadata
+        plugin_name = task.metadata.get("plugin")
+        if not plugin_name:
+            return None
+
+        try:
+            # Get all prompts from plugins
+            all_prompts = self.plugin_manager.get_prompts()
+
+            # Get prompts for this specific plugin
+            plugin_prompts = all_prompts.get(plugin_name, {})
+            if not plugin_prompts:
+                logger.debug(f"No prompts found for plugin: {plugin_name}")
+                return None
+
+            # Get prompt for this task type
+            task_type = task.task_type.value
+            prompt_template = plugin_prompts.get(task_type)
+
+            if not prompt_template:
+                logger.debug(f"No prompt template for task type: {task_type} in plugin: {plugin_name}")
+                return None
+
+            # For now, return the template as-is
+            # TODO: Implement variable substitution with Jinja2
+            logger.debug(f"Using plugin prompt for {task_type} from {plugin_name}")
+            return prompt_template
+
+        except Exception as e:
+            logger.error(f"Failed to build prompt from plugin: {e}")
+            return None
+
     async def _build_prompt(
         self,
         task: Task,
         context: MemoryContext,
         goal: Dict[str, Any],
+        enriched_context: Optional[Dict[str, Any]] = None,
     ) -> str:
         """Build prompt for a task"""
 
@@ -2010,6 +2350,15 @@ class LoopEngine:
         # 🔥 脑暴任务使用专门的简洁提示词
         if task_type == "创意脑暴":
             return self._build_brainstorm_prompt_simple(goal)
+
+        # 🔥 优先级 1: 尝试从插件系统获取提示词
+        if task.metadata.get("plugin_source"):
+            plugin_prompt = await self._build_prompt_from_plugin(task, context, goal)
+            if plugin_prompt:
+                task.metadata["prompt_source"] = "plugin"
+                return plugin_prompt
+            else:
+                logger.debug(f"Plugin prompt not available for {task_type}, falling back to default")
 
         # Base prompt sections
         sections = []
@@ -2214,6 +2563,13 @@ class LoopEngine:
             # 对于其他任务，使用原有的固定规则
             dynamic_context = self._build_dynamic_context_section(task_type, predecessor_contents, goal)
             sections.append(dynamic_context)
+
+        # 🔥 添加插件提供的增强上下文（角色、世界观、事件等）
+        if enriched_context:
+            plugin_context_section = self._build_plugin_context_section(enriched_context)
+            if plugin_context_section:
+                sections.append(plugin_context_section)
+                logger.debug(f"Added plugin context for task {task.task_id}")
 
         # Task-specific instruction based on task type
         # ============ Phase 0: 创意脑暴阶段 ============
@@ -4772,7 +5128,11 @@ class LoopEngine:
 ════════════════════════════════════════════════════════════════
 """
                 logger.info(f"📈 已加载进化提示词: {task_type}")
-        
+
+        # 🔥 标记提示词来源
+        if not task.metadata.get("prompt_source"):
+            task.metadata["prompt_source"] = "hardcoded"
+
         return prompt
 
     async def _attempt_rewrite(

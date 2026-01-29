@@ -417,7 +417,7 @@ class PluginManager:
 
         return all_tasks
 
-    def enrich_context(
+    async def enrich_context(
         self,
         task: Dict[str, Any],
         context: Dict[str, Any],
@@ -439,7 +439,7 @@ class PluginManager:
             plugin = self._enabled[name]
 
             try:
-                context = plugin.enrich_context(task, context)
+                context = await plugin.enrich_context(task, context)
             except Exception as e:
                 logger.error(f"Plugin '{name}' context enrichment failed: {e}")
 
@@ -559,7 +559,7 @@ class PluginManager:
     def validate_cross_plugin_consistency(
         self,
         context: WritingContext,
-    ) -> Dict[str, ValidationResult]:
+    ) -> Dict[str, Any]:
         """
         Run cross-plugin consistency validation
 
@@ -567,9 +567,12 @@ class PluginManager:
             context: Writing context
 
         Returns:
-            Dict of validation_result_name -> ValidationResult
+            Dict with keys: consistent (bool), issues (list)
         """
-        results = {}
+        results = {
+            "consistent": True,
+            "issues": [],
+        }
 
         # Character-Dialogue consistency
         character_plugin = self._enabled.get("character")
@@ -587,21 +590,8 @@ class PluginManager:
                     missing_profiles.append(char_name)
 
             if missing_profiles:
-                results["character_dialogue"] = ValidationResult(
-                    valid=False,
-                    errors=[],
-                    warnings=[f"Characters missing voice profiles: {missing_profiles}"],
-                    suggestions=["Add voice profiles for consistent dialogue"],
-                )
-            else:
-                results["character_dialogue"] = ValidationResult(valid=True)
-
-        # Character-Timeline consistency
-        timeline_plugin = self._enabled.get("timeline")
-        if character_plugin and timeline_plugin:
-            # This would check character location consistency
-            # Timeline plugin already does this in validate_timeline_consistency
-            pass
+                results["consistent"] = False
+                results["issues"].append(f"Characters missing voice profiles: {missing_profiles}")
 
         # Event-Foreshadow consistency
         event_plugin = self._enabled.get("event")
@@ -624,14 +614,7 @@ class PluginManager:
                     unforeshadowed.append(event.get("name", "unnamed"))
 
             if unforeshadowed:
-                results["event_foreshadow"] = ValidationResult(
-                    valid=True,  # Just a warning, not an error
-                    errors=[],
-                    warnings=[f"Major events without foreshadowing: {unforeshadowed}"],
-                    suggestions=["Consider adding foreshadowing for these major events"],
-                )
-            else:
-                results["event_foreshadow"] = ValidationResult(valid=True)
+                results["issues"].append(f"Major events without foreshadowing: {unforeshadowed}")
 
         return results
 

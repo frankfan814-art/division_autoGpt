@@ -656,6 +656,41 @@ class MultiLLMClient:
         """Get fallback order excluding the primary provider"""
         return [p for p in self.fallback_order if p != primary and p in self.providers]
 
+    def register_plugin_tasks(self, plugin_tasks: List[Dict[str, Any]]) -> int:
+        """
+        Register plugin task types to the routing map
+
+        Args:
+            plugin_tasks: List of plugin task definitions
+
+        Returns:
+            Number of tasks registered
+        """
+        registered_count = 0
+        for task in plugin_tasks:
+            task_type = task.get("task_type")
+            if not task_type:
+                continue
+
+            # Skip if already registered
+            if task_type in self.task_type_map:
+                logger.debug(f"Task type '{task_type}' already registered, skipping")
+                continue
+
+            # Use provider from task metadata, default to ALIYUN
+            provider_str = task.get("metadata", {}).get("llm_provider", "aliyun")
+            try:
+                provider = LLMProvider(provider_str)
+            except ValueError:
+                provider = LLMProvider.ALIYUN
+
+            self.task_type_map[task_type] = provider
+            registered_count += 1
+            logger.debug(f"Registered plugin task: {task_type} -> {provider.value}")
+
+        logger.info(f"Registered {registered_count} plugin tasks to routing map")
+        return registered_count
+
     async def generate(
         self,
         prompt: str,
