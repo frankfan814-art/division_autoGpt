@@ -127,21 +127,51 @@ export const Sessions = () => {
   };
 
   const handleRestore = async (id: string) => {
+    // 先找到会话对象，检查状态
+    const session = sessions.find((s: Session) => s.id === id);
+    if (!session) {
+      toast.error('会话不存在');
+      return;
+    }
+
+    // 已完成的会话直接跳转工作区（只读模式）
+    if (session.status === 'completed') {
+      navigate(`/workspace/${id}`);
+      return;
+    }
+
+    // 失败的会话也不应该恢复
+    if (session.status === 'failed') {
+      toast.error('该会话已失败，无法恢复。请创建新项目。');
+      return;
+    }
+
+    // 运行中的会话直接跳转
+    if (session.status === 'running') {
+      navigate(`/workspace/${id}`);
+      return;
+    }
+
+    // 暂停的会话尝试恢复
     try {
       await restoreSession(id);
       // 恢复成功后跳转到工作区
       navigate(`/workspace/${id}`);
     } catch (error: any) {
       logger.error('恢复会话失败:', error);
-      // 🔥 如果 restore 失败（比如没有 engine_state），自动使用 resume
-      // resume 现在已经支持从已完成任务继续
-      logger.debug('尝试使用 resume 继续执行...');
-      try {
-        await resumeSession(id);
-        navigate(`/workspace/${id}`);
-      } catch (resumeError: any) {
-        logger.error('恢复会话也失败:', resumeError);
-        // 可以显示错误提示
+
+      // 检查是否是可恢复的会话
+      if (isResumable(id)) {
+        logger.debug('尝试使用 resume 继续执行...');
+        try {
+          await resumeSession(id);
+          navigate(`/workspace/${id}`);
+        } catch (resumeError: any) {
+          logger.error('恢复会话也失败:', resumeError);
+          toast.error('恢复会话失败，请刷新页面重试');
+        }
+      } else {
+        toast.error('该会话无法恢复，引擎状态已丢失。请创建新项目继续创作。');
       }
     }
   };

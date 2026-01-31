@@ -262,21 +262,11 @@ class EventPlugin(NovelElementPlugin):
             {
                 "task_id": "events_design",
                 "task_type": "事件",
-                "description": "Design plot event chain with causality",
-                "depends_on": ["大纲", "人物设计"],
+                "description": "Design plot event chain with causality and conflicts",
+                "depends_on": ["大纲", "世界观规则", "势力设计", "场景设计", "人物设计", "反派设计"],
                 "metadata": {
                     "plugin": "event",
                     "operation": "design"
-                }
-            },
-            {
-                "task_id": "conflict_design",
-                "task_type": "冲突设计",
-                "description": "Design story conflicts and resolution paths",
-                "depends_on": ["事件"],
-                "metadata": {
-                    "plugin": "event",
-                    "operation": "conflicts"
                 }
             }
         ]
@@ -336,7 +326,7 @@ class EventPlugin(NovelElementPlugin):
 
         if task_type == "事件":
             await self._extract_events(result, context)
-        elif task_type == "冲突设计":
+            # Conflicts are included in event design output
             await self._extract_conflicts(result, context)
 
         return result

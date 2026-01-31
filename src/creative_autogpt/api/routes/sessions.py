@@ -520,9 +520,16 @@ async def start_session(
                 # 🔥 字段名映射：前端使用 requirements（复数），后端使用 requirement（单数）
                 if "requirements" in goal and "requirement" not in goal:
                     goal["requirement"] = goal.pop("requirements")
+
+                # 🔥 获取已完成的任务，支持断点续写
+                completed_tasks = await storage.get_task_results(session_id)
+                completed_task_ids = [t.get("task_id") for t in completed_tasks if t.get("task_id")]
+                logger.info(f"⏭️ Session {session_id[:8]}: Skipping {len(completed_task_ids)} already completed tasks")
+
                 result = await engine.run(
                     goal=goal,
                     chapter_count=session.get("config", {}).get("chapter_count"),
+                    completed_task_ids=completed_task_ids,  # 🔥 传递已完成的任务ID
                 )
 
                 event_type = "completed" if result.status == ExecutionStatus.COMPLETED else "failed"
@@ -1034,6 +1041,73 @@ async def get_plugin_data(
 
     except Exception as e:
         logger.error(f"Failed to get plugin data: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=str(e)
+        )
+
+
+@router.post("/{session_id}/skip-chapter/{chapter_index}", response_model=SuccessResponse)
+async def skip_chapter(
+    session_id: str,
+    chapter_index: int,
+    storage: SessionStorage = Depends(get_session_storage),
+):
+    """
+    跳过指定章节
+
+    将指定章节的任务标记为跳过状态，以便继续执行后续任务。
+    当某个章节生成失败或用户不希望重写时，可以使用此功能跳过该章节。
+    """
+    session = await storage.get_session(session_id)
+    if not session:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Session {session_id} not found"
+        )
+
+    try:
+        # Find the task ID for the given chapter index
+        from creative_autogpt.core.task_planner import NovelTaskType
+
+        # Try to find task by chapter index in metadata
+        tasks = await storage.get_tasks(session_id)
+        task_id_to_skip = None
+
+        for task in tasks:
+            task_chapter = task.get("metadata", {}).get("chapter_index")
+            if task_chapter == chapter_index:
+                # Found the task for this chapter
+                task_id_to_skip = task.get("task_id")
+                break
+
+        if not task_id_to_skip:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"No task found for chapter {chapter_index}"
+            )
+
+        # Use engine registry to skip the task
+        from creative_autogpt.core.engine_registry import get_registry
+
+        registry = await get_registry()
+        skipped = await registry.skip_task(session_id, task_id_to_skip)
+
+        if not skipped:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Failed to skip chapter {chapter_index}"
+            )
+
+        return SuccessResponse(
+            success=True,
+            message=f"Chapter {chapter_index} skipped successfully"
+        )
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to skip chapter: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=str(e)

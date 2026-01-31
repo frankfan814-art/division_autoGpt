@@ -6,8 +6,9 @@ import { ReactNode } from 'react';
 
 export interface BadgeProps {
   children: ReactNode;
-  variant?: 'default' | 'success' | 'warning' | 'danger' | 'info';
+  variant?: 'default' | 'success' | 'warning' | 'danger' | 'info' | 'primary' | 'secondary';
   size?: 'sm' | 'md';
+  className?: string;
 }
 
 const variantStyles = {
@@ -16,6 +17,8 @@ const variantStyles = {
   warning: 'bg-yellow-100 text-yellow-800',
   danger: 'bg-red-100 text-red-800',
   info: 'bg-blue-100 text-blue-800',
+  primary: 'bg-blue-500 text-white',
+  secondary: 'bg-gray-200 text-gray-800',
 };
 
 const sizeStyles = {
@@ -23,9 +26,9 @@ const sizeStyles = {
   md: 'px-2.5 py-1 text-sm',
 };
 
-export const Badge = ({ children, variant = 'default', size = 'md' }: BadgeProps) => {
+export const Badge = ({ children, variant = 'default', size = 'md', className }: BadgeProps) => {
   return (
-    <span className={`inline-flex items-center rounded-full font-medium ${variantStyles[variant]} ${sizeStyles[size]}`}>
+    <span className={`inline-flex items-center rounded-full font-medium ${variantStyles[variant]} ${sizeStyles[size]} ${className || ''}`}>
       {children}
     </span>
   );

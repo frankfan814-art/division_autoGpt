@@ -106,7 +106,7 @@ class EngineRegistry:
 
     async def pause(self, session_id: str) -> bool:
         """
-        Pause a running engine
+        Pause a running engine and save state for resume
 
         Args:
             session_id: Session identifier
@@ -125,9 +125,14 @@ class EngineRegistry:
             )
             return False
 
-        engine.pause()
-        logger.info(f"Paused engine for session {session_id}")
-        return True
+        # Use pause_and_save to persist state for resume capability
+        success = await engine.pause_and_save()
+        if success:
+            logger.info(f"Paused and saved engine state for session {session_id}")
+            return True
+        else:
+            logger.error(f"Failed to pause engine for session {session_id}")
+            return False
 
     async def resume(self, session_id: str) -> bool:
         """
@@ -182,6 +187,42 @@ class EngineRegistry:
         engine.stop()
         logger.info(f"Stopped engine for session {session_id}")
         return True
+
+    async def skip_task(self, session_id: str, task_id: str) -> bool:
+        """
+        Skip a task in the engine
+
+        Args:
+            session_id: Session identifier
+            task_id: Task ID to skip
+
+        Returns:
+            True if successfully skipped
+        """
+        engine = self.get(session_id)
+        if engine is None:
+            # Engine not in memory, need to handle differently
+            # For now, just update task status in storage
+            from creative_autogpt.storage.session import SessionStorage
+            storage = SessionStorage()
+            try:
+                # Update task status directly in storage
+                await storage.update_task_status(session_id, task_id, "skipped")
+                logger.info(f"Task {task_id} marked as skipped in storage")
+                return True
+            except Exception as e:
+                logger.error(f"Failed to skip task {task_id}: {e}")
+                return False
+
+        # Engine is in memory, use its skip_task method
+        try:
+            result = await engine.skip_task(task_id)
+            if result:
+                logger.info(f"Task {task_id} skipped in engine for session {session_id}")
+            return result
+        except Exception as e:
+            logger.error(f"Failed to skip task {task_id}: {e}")
+            return False
 
     def get_status(self, session_id: str) -> Optional[ExecutionStatus]:
         """

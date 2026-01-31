@@ -361,8 +361,8 @@ class WorldViewPlugin(NovelElementPlugin):
             {
                 "task_id": "faction_design",
                 "task_type": "势力设计",
-                "description": "Design major factions and organizations",
-                "depends_on": ["世界观规则"],
+                "description": "Design major factions and organizations (cults, clans, families). Each faction includes: beliefs, goals, power systems, personnel structure, territory, relationships",
+                "depends_on": ["大纲", "世界观规则"],
                 "metadata": {
                     "plugin": "worldview",
                     "operation": "factions"
@@ -371,8 +371,8 @@ class WorldViewPlugin(NovelElementPlugin):
             {
                 "task_id": "location_design",
                 "task_type": "场景设计",
-                "description": "Design detailed locations and places",
-                "depends_on": ["世界观规则"],
+                "description": "Design detailed locations and places (secret realms, forbidden areas, ruins, caves, cities). Each location includes: geographic position, environment description, unique features/secrets, related factions, plot role",
+                "depends_on": ["大纲", "世界观规则", "势力设计"],
                 "metadata": {
                     "plugin": "worldview",
                     "operation": "locations"

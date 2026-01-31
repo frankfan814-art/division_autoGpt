@@ -7,6 +7,7 @@ Implements the DAG-based task scheduling from the architecture.
 
 import uuid
 from dataclasses import dataclass, field
+from datetime import datetime
 from enum import Enum
 from typing import Any, Dict, List, Optional
 
@@ -23,8 +24,20 @@ class NovelTaskType(str, Enum):
     OUTLINE = "大纲"  # 完整大纲，包含事件、伏笔、章节规划
 
     # Phase 2: Elements (元素设计 - 基于大纲)
-    CHARACTER_DESIGN = "人物设计"
     WORLDVIEW_RULES = "世界观规则"
+    FACTION_DESIGN = "势力设计"  # 门派、家族、组织等势力设定
+    SCENE_DESIGN = "场景设计"  # 秘境、禁地、遗迹、洞府等地点详细设定
+    CHARACTER_DESIGN = "人物设计"
+    POWER_SYSTEM = "功法法宝"  # 功法、秘术、法宝设定
+    GROWTH_PATH = "主角成长"  # 主角境界划分、突破条件、成长路径
+    VILLAIN_DESIGN = "反派设计"  # 主要反派、阶段性对手
+    EVENTS = "事件"  # 详细事件列表，包含章节、人物、起因、经过、结果
+    TIMELINE = "时间线"  # 事件时间顺序、人物年龄变化
+    FORESHADOW_LIST = "伏笔列表"  # 伏笔管理，包含名称、埋设章节、回收章节
+
+    # Phase 3: Quality Check (质量检查 - 每章后自动运行)
+    CONSISTENCY_CHECK = "一致性检查"  # 检查人物、世界观、时间线一致性
+    DIALOGUE_CHECK = "对话检查"  # 检查角色对话风格一致性
 
     # Phase 3: Sequential Chapter Generation (逐章生成 - 确保连贯性)
     CHAPTER_CONTENT = "章节内容"  # 逐章生成，每章依赖前一章，确保连贯性（直接生成高质量内容，无需润色）
@@ -193,9 +206,57 @@ class TaskPlanner:
             is_foundation=True,
         ),
         TaskDefinition(
-            task_type=NovelTaskType.CHARACTER_DESIGN,
-            description="根据大纲和世界观规则，设计能够推动故事发展的人物。主角的目标、缺陷、成长弧线都要服务于大纲",
+            task_type=NovelTaskType.FACTION_DESIGN,
+            description="基于世界观规则，设计各大势力（门派、家族、组织）。每个势力包含：信仰/目标、能力体系、人员结构、地盘范围、与其他势力的关系",
             depends_on=["大纲", "世界观规则"],
+            is_foundation=True,
+        ),
+        TaskDefinition(
+            task_type=NovelTaskType.SCENE_DESIGN,
+            description="基于世界观和势力设计，详细设计重要地点（秘境、禁地、遗迹、洞府、城市等）。每个地点包含：地理位置、环境描述、特色/秘密、相关势力、剧情作用",
+            depends_on=["大纲", "世界观规则", "势力设计"],
+            is_foundation=True,
+        ),
+        TaskDefinition(
+            task_type=NovelTaskType.CHARACTER_DESIGN,
+            description="根据大纲、世界观、势力设计和场景，设计能够推动故事发展的人物。主角的目标、缺陷、成长弧线都要服务于大纲",
+            depends_on=["大纲", "世界观规则", "势力设计"],
+            is_foundation=True,
+        ),
+        TaskDefinition(
+            task_type=NovelTaskType.POWER_SYSTEM,
+            description="基于世界观规则，设计功法、秘术、法宝体系。包含：功法名称、等级、效果、修炼条件、限制；法宝来历、能力、器灵",
+            depends_on=["大纲", "世界观规则", "势力设计"],
+            is_foundation=True,
+        ),
+        TaskDefinition(
+            task_type=NovelTaskType.GROWTH_PATH,
+            description="基于世界观和功法体系，规划主角成长路径。包含：境界划分（炼气→筑基→金丹→元婴→化神）、每个境界的突破条件、核心功法的获取和升级路径、重要顿悟时刻",
+            depends_on=["大纲", "世界观规则", "功法法宝", "人物设计"],
+            is_foundation=True,
+        ),
+        TaskDefinition(
+            task_type=NovelTaskType.VILLAIN_DESIGN,
+            description="基于大纲和主角成长路径，设计反派体系。主要反派：目标、实力、与主角的恩怨；次要反派：阶段性对手；反派的成长和变化",
+            depends_on=["大纲", "人物设计", "主角成长", "势力设计"],
+            is_foundation=True,
+        ),
+        TaskDefinition(
+            task_type=NovelTaskType.EVENTS,
+            description="基于大纲，详细规划每个关键事件。包含发生章节、涉及人物、起因、经过、结果、推动的情节",
+            depends_on=["大纲", "世界观规则", "势力设计", "场景设计", "人物设计", "反派设计"],
+            is_foundation=True,
+        ),
+        TaskDefinition(
+            task_type=NovelTaskType.TIMELINE,
+            description="基于事件列表，建立精确的时间线。包含：事件时间顺序、人物年龄变化、修为提升的时间跨度、重要时间节点",
+            depends_on=["大纲", "人物设计", "事件", "主角成长"],
+            is_foundation=True,
+        ),
+        TaskDefinition(
+            task_type=NovelTaskType.FORESHADOW_LIST,
+            description="基于大纲、事件和时间线，系统化管理所有伏笔。记录伏笔名称、埋设章节、回收章节、重要性",
+            depends_on=["大纲", "势力设计", "人物设计", "事件", "时间线"],
             is_foundation=True,
         ),
 
@@ -300,6 +361,8 @@ class TaskPlanner:
         self,
         goal: Dict[str, Any],
         chapter_count: Optional[int] = None,
+        completed_task_ids: Optional[List[str]] = None,
+        completed_task_records: Optional[List[Dict[str, Any]]] = None,
     ) -> List[Task]:
         """
         Generate a task plan based on the creation goal
@@ -307,14 +370,30 @@ class TaskPlanner:
         Args:
             goal: Creation goal with style, theme, length, etc.
             chapter_count: Number of chapters to create (启用逐章生成模式)
+            completed_task_ids: [DEPRECATED] List of already completed task IDs (for resume)
+            completed_task_records: List of completed task records for intelligent matching by task_type + chapter_index
 
         Returns:
             List of tasks ready for execution
         """
         logger.info(f"Planning tasks for goal: {goal.get('title', 'Untitled')}")
 
+        if completed_task_ids:
+            logger.info(f"🔄 Resume mode (legacy): {len(completed_task_ids)} task IDs")
+        if completed_task_records:
+            logger.info(f"🔄 Resume mode (intelligent): {len(completed_task_records)} task records")
+
         # Clear previous tasks
         self.tasks = {}
+
+        # 🔥 检查是否为二创模式（支持多种配置方式）
+        derivative_mode = (
+            goal.get('mode') == 'derivative' or  # goal 中的 mode
+            goal.get('derivative_mode', False) or  # goal 中的 derivative_mode
+            self.config.get('is_derivative', False)  # config 中的 is_derivative（前端传递）
+        )
+        if derivative_mode:
+            logger.info("🔥 二创模式已启用：跳过'创意脑暴'，直接从大纲开始")
 
         # 创建基础任务（创意脑暴 → 故事核心 → 大纲 → 世界观规则 → 人物设计）
         for definition in self.DEFAULT_TASK_DEFINITIONS:
@@ -326,8 +405,20 @@ class TaskPlanner:
         for plugin_def in plugin_tasks:
             # 插件任务覆盖策略：相同 task_type 时，插件版本优先
             task_type_str = plugin_def.task_type.value
+
+            # 🔥 如果存在同类型的硬编码任务，先删除它
             if task_type_str in self.task_definitions:
-                logger.info(f"🔥 插件任务覆盖硬编码: {task_type_str} from {plugin_def.metadata.get('plugin')}")
+                # 找到并删除硬编码版本的任务实例
+                to_delete = []
+                for task_id, task in self.tasks.items():
+                    if task.task_type.value == task_type_str:
+                        # 检查是否是硬编码版本（没有plugin元数据）
+                        if not task.metadata.get('plugin'):
+                            to_delete.append(task_id)
+                            logger.info(f"🔥 删除硬编码任务，将被插件版本替代: {task_type_str} ({task_id})")
+
+                for task_id in to_delete:
+                    del self.tasks[task_id]
 
             # 注册插件任务定义（覆盖硬编码版本）
             self.register_task_definition(plugin_def)
@@ -336,6 +427,32 @@ class TaskPlanner:
             task = self._create_task_from_definition(plugin_def, goal)
             self.tasks[task.task_id] = task
             logger.debug(f"Created plugin task: {task_type_str}")
+
+        # 🔥 二创模式：跳过创意脑暴任务，移除大纲对它的依赖
+        if derivative_mode:
+            brainstorm_task_id = None
+            outline_task_id = None
+
+            for task_id, task in self.tasks.items():
+                if task.task_type.value == "创意脑暴":
+                    brainstorm_task_id = task_id
+                elif task.task_type.value == "大纲":
+                    outline_task_id = task_id
+
+            # 移除创意脑暴任务
+            if brainstorm_task_id:
+                del self.tasks[brainstorm_task_id]
+                logger.info(f"🔥 二创模式：已跳过'创意脑暴'任务 ({brainstorm_task_id})")
+
+            # 移除大纲对创意脑暴的依赖
+            if outline_task_id:
+                self.tasks[outline_task_id].depends_on = [
+                    dep for dep in self.tasks[outline_task_id].depends_on
+                    if dep != "创意脑暴"
+                ]
+                # 如果大纲依赖现在是空的，说明它已经可以执行了
+                if not self.tasks[outline_task_id].depends_on:
+                    logger.info(f"🔥 二创模式：大纲任务已移除对创意脑暴的依赖，可直接执行")
 
         # Create chapter tasks if chapter count specified (逐章生成模式)
         if chapter_count:
@@ -346,6 +463,13 @@ class TaskPlanner:
 
         # Resolve dependencies
         self._resolve_dependencies()
+
+        # 🔥 恢复模式：标记已完成的任务
+        # 🔥 优先使用 completed_task_records 进行智能匹配
+        if completed_task_records:
+            self._mark_completed_tasks_intelligent(completed_task_records)
+        elif completed_task_ids:
+            self._mark_completed_tasks(completed_task_ids)
 
         # Mark ready tasks
         self._update_ready_tasks()
@@ -394,12 +518,16 @@ class TaskPlanner:
         logger.info(f"Creating tasks for {chapter_count} chapters (逐章生成方案，使用 Qwen Long 直接生成高质量内容)")
 
         # Phase 3: 逐章生成任务
-        # 每个章节依赖于：大纲、世界观、人物设计，以及上一章节
+        # 每个章节依赖于：所有基础设定任务 + 上一章节
         previous_chapter_task_id = None
 
         for chapter_index in range(1, chapter_count + 1):
-            # 构建依赖列表
-            depends_on = ["大纲", "世界观规则", "人物设计"]
+            # 构建依赖列表 - 包含所有基础设定
+            depends_on = [
+                "大纲", "世界观规则", "势力设计", "场景设计",
+                "人物设计", "功法法宝", "主角成长", "反派设计",
+                "事件", "时间线", "伏笔列表"
+            ]
             if previous_chapter_task_id:
                 depends_on.append(previous_chapter_task_id)
 
@@ -457,6 +585,81 @@ class TaskPlanner:
 
         ready_count = sum(1 for t in self.tasks.values() if t.status == "ready")
         logger.debug(f"Updated ready tasks: {ready_count} ready")
+
+    def _mark_completed_tasks(self, completed_task_ids: List[str]) -> None:
+        """
+        Mark tasks as completed (for resume functionality)
+
+        Args:
+            completed_task_ids: List of task IDs that are already completed
+        """
+        if not completed_task_ids:
+            return
+
+        completed_count = 0
+        for task_id in completed_task_ids:
+            if task_id in self.tasks:
+                task = self.tasks[task_id]
+                task.status = "completed"
+                task.completed_at = datetime.utcnow()
+                completed_count += 1
+                logger.debug(f"Marked task as completed: {task.task_type.value} ({task_id})")
+            else:
+                logger.warning(f"Completed task ID not found in current plan: {task_id}")
+
+        logger.info(f"✅ Marked {completed_count}/{len(completed_task_ids)} tasks as completed")
+
+    def _mark_completed_tasks_intelligent(self, completed_task_records: List[Dict[str, Any]]) -> None:
+        """
+        智能标记已完成的任务（通过 task_type + chapter_index 匹配，而不是 task_id）
+
+        因为每次 TaskPlanner.plan() 都会重新生成 task_id，所以不能通过 task_id 匹配。
+        相反，我们应该通过 task_type 和 chapter_index 来匹配已完成的任务。
+
+        Args:
+            completed_task_records: List of completed task records with task_type and chapter_index
+        """
+        if not completed_task_records:
+            return
+
+        # 构建已完成任务的索引：key = (task_type, chapter_index), value = task_record
+        completed_index = {}
+        for record in completed_task_records:
+            task_type = record.get("task_type", "")
+            metadata = record.get("metadata", {}) or {}
+            chapter_index = metadata.get("chapter_index")
+
+            # 对于章节任务，使用 (task_type, chapter_index) 作为 key
+            # 对于非章节任务，只使用 task_type 作为 key
+            if chapter_index is not None:
+                key = (task_type, chapter_index)
+            else:
+                key = task_type
+
+            if key not in completed_index:
+                completed_index[key] = record
+
+        logger.info(f"🔍 Built completed task index with {len(completed_index)} entries")
+
+        # 遍历当前任务，匹配已完成的任务
+        completed_count = 0
+        for task in self.tasks.values():
+            task_type = task.task_type.value
+            chapter_index = task.metadata.get("chapter_index")
+
+            # 构建与上面相同的 key
+            if chapter_index is not None:
+                key = (task_type, chapter_index)
+            else:
+                key = task_type
+
+            if key in completed_index:
+                task.status = "completed"
+                task.completed_at = datetime.utcnow()
+                completed_count += 1
+                logger.debug(f"✅ Marked task as completed: {task_type} (chapter: {chapter_index})")
+
+        logger.info(f"✅ Intelligent matching: marked {completed_count}/{len(self.tasks)} tasks as completed")
 
     def _check_dependencies_met(self, task: Task) -> bool:
         """Check if all dependencies of a task are completed"""

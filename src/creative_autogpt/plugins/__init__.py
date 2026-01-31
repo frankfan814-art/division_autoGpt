@@ -17,6 +17,9 @@ from creative_autogpt.plugins.timeline import TimelinePlugin
 from creative_autogpt.plugins.scene import ScenePlugin
 from creative_autogpt.plugins.dialogue import DialoguePlugin
 from creative_autogpt.plugins.example_extractor import ExampleExtractorPlugin
+from creative_autogpt.plugins.power import PowerPlugin
+from creative_autogpt.plugins.growth import GrowthPlugin
+from creative_autogpt.plugins.villain import VillainPlugin
 
 __all__ = [
     "NovelElementPlugin",
@@ -33,4 +36,7 @@ __all__ = [
     "ScenePlugin",
     "DialoguePlugin",
     "ExampleExtractorPlugin",
+    "PowerPlugin",
+    "GrowthPlugin",
+    "VillainPlugin",
 ]

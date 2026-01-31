@@ -165,55 +165,27 @@ class CharacterPlugin(NovelElementPlugin):
         return {
             "character_design": """## 任务: 设计人物角色
 
-请为小说设计详细的人物角色档案。
+为小说设计主角和重要配角的角色档案。
 
-### 设计要求
+### 主角档案结构
 
-**主角档案:**
-- 姓名: 具有角色特色的姓名
-- 年龄: 符合角色定位
-- 性别:
-- 外貌: 详细的体貌特征描述 (100-200字)
-- 性格特点:
-  - 核心性格特质 (3-5个)
-  - 优点 (2-3个)
-  - 缺点 (2-3个，角色成长的突破口)
-- 背景设定:
-  - 出身/来历
-  - 家庭状况
-  - 成长经历
-  - 职业/身份
-- 核心动机:
-  - 主要目标: 主角最想达成的目标
-  - 次要目标: 支撑性目标
-  - 恐惧: 主角最害怕的事物
-  - 渴望: 主角内心深处的渴望
-- 能力设定:
-  - 技能: 擅长的技能
-  - 特殊能力: 如适用
-  - 限制: 能力的局限性
-- 成长弧线:
-  - 初始状态: 故事开始时的状态
-  - 成长节点: 关键的成长转折点
-  - 最终状态: 预期的成长结果
-- 声音特征:
-  - 说话习惯: 特殊的说话方式
-  - 用词特点: 词汇风格
-  - 口头禅: 标志性的话语
-  - 语气基调: 整体语气
+- **基本信息**: 姓名、年龄、性别、外貌特征(100-200字)
+- **性格特点**: 核心特质(3-5个)、优点、缺点(成长的突破口)
+- **背景设定**: 出身来历、家庭状况、成长经历、职业身份
+- **核心动机**: 主要目标、次要目标、恐惧、渴望
+- **能力设定**: 技能、特殊能力(如有)、限制条件
+- **成长弧线**: 初始状态、成长节点、最终状态
+- **声音特征**: 说话习惯、用词特点、口头禅、语气基调
 
-**配角设计:**
-请设计 3-5 个重要配角，每个包含:
-- 姓名和定位
-- 与主角的关系
-- 在故事中的作用
-- 核心特征
+### 配角设计
 
-**人物关系图:**
-- 主要人物之间的关系网络
-- 关系的动态变化
+设计 3-5 个重要配角，包含: 姓名、定位、与主角关系、故事作用、核心特征。
 
-请以结构化的 JSON 格式输出。
+### 人物关系
+
+定义主要人物之间的关系网络及动态变化。
+
+请以 JSON 格式输出结构化数据。
 """,
 
             "relationship_mapping": """## 任务: 构建人物关系图谱
@@ -221,15 +193,14 @@ class CharacterPlugin(NovelElementPlugin):
 ### 已有角色
 {characters}
 
-### 关系映射要求
+### 关系定义要求
 
-请分析并定义角色之间的关系:
-
-1. **关系类型**: 家人/恋人/朋友/师徒/仇敌/竞争/其他
-2. **关系强度**: 密切/一般/疏远
-3. **关系性质**: 正面/负面/复杂
-4. **关系动态**: 关系在故事中的变化方向
-5. **关键场景**: 展现关系的重要场景
+对每对角色关系，定义:
+- 关系类型: 家人/恋人/朋友/师徒/仇敌/竞争/其他
+- 关系强度: 密切/一般/疏远
+- 关系性质: 正面/负面/复杂
+- 关系动态: 故事中的变化方向
+- 关键场景: 展现关系的重要场景
 
 请以 JSON 格式输出关系图谱。
 """,
@@ -244,15 +215,14 @@ class CharacterPlugin(NovelElementPlugin):
 
 ### 检查维度
 
-1. **性格一致性**: 角色行为是否符合已设定性格
-2. **声音一致性**: 对话是否符合角色说话风格
-3. **能力一致性**: 角色表现的能力是否与设定匹配
-4. **动机一致性**: 角色行为是否与其动机一致
-5. **关系一致性**: 角色互动是否符合关系设定
+1. 性格一致性: 角色行为是否符合已设定性格
+2. 声音一致性: 对话是否符合角色说话风格
+3. 能力一致性: 角色表现的能力是否与设定匹配
+4. 动机一致性: 角色行为是否与其动机一致
+5. 关系一致性: 角色互动是否符合关系设定
 
-### 输出要求
+### 输出格式
 
-请输出 JSON 格式的检查结果:
 ```json
 {{
   "is_consistent": true/false,
@@ -276,31 +246,11 @@ class CharacterPlugin(NovelElementPlugin):
             {
                 "task_id": "character_design",
                 "task_type": "人物设计",
-                "description": "Design main and supporting characters with detailed profiles",
-                "depends_on": ["大纲"],
+                "description": "Design main and supporting characters with detailed profiles and relationships",
+                "depends_on": ["大纲", "世界观规则", "势力设计"],
                 "metadata": {
                     "plugin": "character",
                     "operation": "design"
-                }
-            },
-            {
-                "task_id": "relationship_mapping",
-                "task_type": "人物关系",
-                "description": "Map relationships between characters",
-                "depends_on": ["人物设计"],
-                "metadata": {
-                    "plugin": "character",
-                    "operation": "relationships"
-                }
-            },
-            {
-                "task_id": "character_voice_check",
-                "task_type": "对话检查",
-                "description": "Check character voice consistency in dialogue",
-                "depends_on": ["章节内容"],
-                "metadata": {
-                    "plugin": "character",
-                    "operation": "voice_check"
                 }
             }
         ]
@@ -369,10 +319,8 @@ class CharacterPlugin(NovelElementPlugin):
 
         if task_type == "人物设计":
             await self._extract_characters(result, context)
-        elif task_type == "人物关系":
+            # Relationships are included in character design output
             await self._extract_relationships(result, context)
-        elif task_type == "对话检查":
-            await self._process_voice_check(result, context)
 
         return result
 
@@ -432,20 +380,6 @@ class CharacterPlugin(NovelElementPlugin):
 
         except Exception as e:
             logger.error(f"Error extracting relationships: {e}")
-
-    async def _process_voice_check(
-        self,
-        result: str,
-        context: WritingContext,
-    ) -> None:
-        """Process voice consistency check results"""
-        # Store check results in context for future reference
-        if "voice_check_results" not in context.metadata:
-            context.metadata["voice_check_results"] = []
-        context.metadata["voice_check_results"].append({
-            "timestamp": datetime.utcnow().isoformat(),
-            "result": result
-        })
 
     async def enrich_context(
         self,

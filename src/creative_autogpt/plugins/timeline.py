@@ -185,13 +185,13 @@ class TimelinePlugin(NovelElementPlugin):
         """Get task definitions for timeline-related operations"""
         return [
             {
-                "task_id": "timeline_check",
-                "task_type": "时间线检查",
-                "description": "Check timeline consistency in the story",
-                "depends_on": ["章节内容"],
+                "task_id": "timeline_creation",
+                "task_type": "时间线",
+                "description": "Create detailed story timeline with event chronology, character ages, cultivation progression timeline, and important time milestones",
+                "depends_on": ["大纲", "人物设计", "事件", "主角成长"],
                 "metadata": {
                     "plugin": "timeline",
-                    "operation": "check"
+                    "operation": "create"
                 }
             }
         ]
@@ -242,7 +242,9 @@ class TimelinePlugin(NovelElementPlugin):
         """Process timeline-related task results"""
         task_type = task.get("task_type", "")
 
-        if task_type == "时间线检查":
+        if task_type == "时间线":
+            await self._extract_timeline(result, context)
+        elif task_type == "时间线检查":
             await self._process_timeline_check(result, context)
 
         return result
@@ -272,6 +274,33 @@ class TimelinePlugin(NovelElementPlugin):
 
         except Exception as e:
             logger.error(f"Error processing timeline check: {e}")
+
+    async def _extract_timeline(
+        self,
+        result: str,
+        context: WritingContext,
+    ) -> None:
+        """Extract timeline data from result"""
+        try:
+            if "{" in result and "}" in result:
+                json_start = result.find("{")
+                json_end = result.rfind("}") + 1
+                json_str = result[json_start:json_end]
+                data = json.loads(json_str)
+
+                # Extract timeline events
+                if "timeline_events" in data:
+                    self._timeline = data["timeline_events"]
+                    logger.info(f"Extracted {len(self._timeline)} timeline events")
+
+                # Set current time if provided
+                if "current_time" in data:
+                    self._current_chapter_time = data["current_time"]
+
+        except json.JSONDecodeError as e:
+            logger.warning(f"Failed to parse timeline data as JSON: {e}")
+        except Exception as e:
+            logger.error(f"Error extracting timeline: {e}")
 
     async def enrich_context(
         self,

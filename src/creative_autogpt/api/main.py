@@ -12,7 +12,7 @@ from loguru import logger
 
 from creative_autogpt.api.schemas.response import HealthResponse
 from creative_autogpt.utils.config import get_settings
-from creative_autogpt.api.routes import sessions, websocket, prompts
+from creative_autogpt.api.routes import sessions, websocket, prompts, chapters, characters, foreshadows, derivative
 from creative_autogpt.utils.logger import setup_logger
 
 
@@ -93,6 +93,10 @@ def create_app() -> FastAPI:
     app.include_router(sessions.router)
     app.include_router(websocket.router)
     app.include_router(prompts.router)
+    app.include_router(chapters.router)  # 🔥 章节重写和版本管理 API
+    app.include_router(characters.router)  # 🔥 人物管理 API
+    app.include_router(foreshadows.router)  # 🔥 伏笔追踪 API
+    app.include_router(derivative.router)  # 🔥 二创配置 API
 
     # Root endpoint
     @app.get("/")

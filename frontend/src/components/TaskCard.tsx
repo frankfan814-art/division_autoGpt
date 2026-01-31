@@ -52,15 +52,28 @@ export const TaskCard = ({
   };
 
   const renderEvaluation = () => {
-    if (!showEvaluation || !task.evaluation || task.status !== 'completed') {
+    // 🔥 修改：也支持显示失败任务的评估信息
+    // 评估信息可能来自 task.evaluation 或 task.metadata.evaluation
+    const evaluation = task.evaluation || task.metadata?.evaluation;
+    const showEval = showEvaluation && evaluation && (task.status === 'completed' || task.status === 'failed');
+
+    if (!showEval) {
       return null;
     }
 
-    const { evaluation } = task;
-    const { quality_score, consistency_score, score } = evaluation;
+    const { quality_score, consistency_score, score, passed, issues, suggestions, quality_issues, consistency_issues } = evaluation;
+    const isFailed = task.status === 'failed' || passed === false;
 
     return (
-      <div className="mt-3 p-3 bg-gray-50 rounded-lg border">
+      <div className={`mt-3 p-3 rounded-lg border ${isFailed ? 'bg-red-50 border-red-200' : 'bg-gray-50 border-gray-200'}`}>
+        {/* 🔥 失败状态标题 */}
+        {isFailed && (
+          <div className="mb-3 pb-2 border-b border-red-200">
+            <p className="text-sm font-bold text-red-700">❌ 评估未通过</p>
+            <p className="text-xs text-red-600 mt-1">以下问题需要修复：</p>
+          </div>
+        )}
+
         {/* 🔥 分别显示质量和一致性评分 */}
         {quality_score !== undefined && consistency_score !== undefined ? (
           <div className="grid grid-cols-2 gap-2 mb-2">
@@ -86,25 +99,27 @@ export const TaskCard = ({
           </div>
         )}
 
-        {evaluation.reasons && evaluation.reasons.length > 0 && (
-          <div className="mt-2">
-            <p className="text-xs font-medium text-gray-600 mb-1">评估结果:</p>
-            <ul className="text-xs text-gray-600 space-y-1">
-              {evaluation.reasons.map((reason, idx) => (
+        {/* 🔥 优先显示 issues（未通过原因）- 更醒目 */}
+        {(issues && issues.length > 0) && (
+          <div className="mt-2 p-2 bg-red-100 rounded border border-red-300">
+            <p className="text-xs font-bold text-red-700 mb-1">🚨 未通过原因：</p>
+            <ul className="text-xs text-red-800 space-y-1">
+              {issues.map((issue: string, idx: number) => (
                 <li key={idx} className="flex items-start">
-                  <span className="mr-1">•</span>
-                  <span>{reason}</span>
+                  <span className="mr-1 font-bold">•</span>
+                  <span>{issue}</span>
                 </li>
               ))}
             </ul>
           </div>
         )}
 
-        {evaluation.suggestions && evaluation.suggestions.length > 0 && (
-          <div className="mt-2">
-            <p className="text-xs font-medium text-gray-600 mb-1">改进建议:</p>
-            <ul className="text-xs text-gray-600 space-y-1">
-              {evaluation.suggestions.map((suggestion, idx) => (
+        {/* 🔥 显示改进建议 */}
+        {(suggestions && suggestions.length > 0) && (
+          <div className={`mt-2 p-2 rounded border ${isFailed ? 'bg-orange-100 border-orange-300' : 'bg-blue-50 border-blue-200'}`}>
+            <p className="text-xs font-bold text-gray-700 mb-1">💡 改进建议：</p>
+            <ul className="text-xs text-gray-700 space-y-1">
+              {suggestions.map((suggestion: string, idx: number) => (
                 <li key={idx} className="flex items-start">
                   <span className="mr-1">→</span>
                   <span>{suggestion}</span>
@@ -114,12 +129,12 @@ export const TaskCard = ({
           </div>
         )}
 
-        {/* 🔥 显示质量问题和一致性问题 */}
-        {evaluation.quality_issues && evaluation.quality_issues.length > 0 && (
+        {/* 🔥 显示质量问题和一致性问题（兼容旧格式） */}
+        {(!issues || issues.length === 0) && quality_issues && quality_issues.length > 0 && (
           <div className="mt-2">
             <p className="text-xs font-medium text-gray-600 mb-1">质量问题:</p>
             <ul className="text-xs text-red-600 space-y-1">
-              {evaluation.quality_issues.map((issue, idx) => (
+              {quality_issues.map((issue: string, idx: number) => (
                 <li key={idx} className="flex items-start">
                   <span className="mr-1">•</span>
                   <span>{issue}</span>
@@ -129,14 +144,28 @@ export const TaskCard = ({
           </div>
         )}
 
-        {evaluation.consistency_issues && evaluation.consistency_issues.length > 0 && (
+        {(!issues || issues.length === 0) && consistency_issues && consistency_issues.length > 0 && (
           <div className="mt-2">
             <p className="text-xs font-medium text-gray-600 mb-1">一致性问题:</p>
             <ul className="text-xs text-orange-600 space-y-1">
-              {evaluation.consistency_issues.map((issue, idx) => (
+              {consistency_issues.map((issue: string, idx: number) => (
                 <li key={idx} className="flex items-start">
                   <span className="mr-1">•</span>
                   <span>{issue}</span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+
+        {evaluation.reasons && evaluation.reasons.length > 0 && (!issues || issues.length === 0) && (
+          <div className="mt-2">
+            <p className="text-xs font-medium text-gray-600 mb-1">评估结果:</p>
+            <ul className="text-xs text-gray-600 space-y-1">
+              {evaluation.reasons.map((reason: string, idx: number) => (
+                <li key={idx} className="flex items-start">
+                  <span className="mr-1">•</span>
+                  <span>{reason}</span>
                 </li>
               ))}
             </ul>
@@ -145,7 +174,7 @@ export const TaskCard = ({
 
         {evaluation.dimension_scores && Object.keys(evaluation.dimension_scores).length > 0 && (
           <div className="mt-3 grid grid-cols-2 gap-2">
-            {Object.entries(evaluation.dimension_scores).map(([dim, scoreData]) => (
+            {Object.entries(evaluation.dimension_scores).map(([dim, scoreData]: [string, any]) => (
               <div key={dim} className="bg-white p-2 rounded border">
                 <p className="text-xs font-medium text-gray-700">{dim}</p>
                 <p className="text-sm font-bold text-gray-900">{scoreData.score}/100</p>

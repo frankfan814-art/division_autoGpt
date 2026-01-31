@@ -49,6 +49,7 @@ export interface Task {
   chapter_index?: number;
   llm_provider?: string;
   llm_model?: string;
+  prompt?: string;  // 提示词
   // 🔥 新增任务统计字段
   started_at?: string;
   completed_at?: string;

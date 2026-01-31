@@ -118,12 +118,200 @@ export const sessionsApi = {
     const response = await apiClient.get(`/sessions/${sessionId}/restore-info`);
     return response.data;
   },
+
+  // 跳过章节
+  skipChapter: async (sessionId: string, chapterIndex: number): Promise<any> => {
+    const response = await apiClient.post(`/sessions/${sessionId}/skip-chapter/${chapterIndex}`);
+    return response.data;
+  },
 };
 
 // Health API
 export const healthApi = {
   check: async (): Promise<HealthResponse> => {
     const response = await apiClient.get<HealthResponse>('/health');
+    return response.data;
+  },
+};
+
+// Chapters API - 章节重写和版本管理
+export const chaptersApi = {
+  // 重写章节
+  rewrite: async (
+    sessionId: string,
+    chapterIndex: number,
+    reason?: string,
+    feedback?: string,
+    maxRetries: number = 3
+  ): Promise<any> => {
+    const response = await apiClient.post(`/chapters/${sessionId}/rewrite`, null, {
+      params: { chapter_index: chapterIndex, reason, feedback, max_retries: maxRetries }
+    });
+    return response.data;
+  },
+
+  // 获取所有章节版本概览
+  listVersions: async (sessionId: string): Promise<any> => {
+    const response = await apiClient.get(`/chapters/${sessionId}/versions`);
+    return response.data;
+  },
+
+  // 获取指定章节的所有版本
+  getChapterVersions: async (sessionId: string, chapterIndex: number): Promise<any> => {
+    const response = await apiClient.get(`/chapters/${sessionId}/chapters/${chapterIndex}/versions`);
+    return response.data;
+  },
+
+  // 恢复到指定版本
+  restoreVersion: async (sessionId: string, chapterIndex: number, versionId: string): Promise<any> => {
+    const response = await apiClient.post(`/chapters/${sessionId}/chapters/${chapterIndex}/versions/${versionId}/restore`);
+    return response.data;
+  },
+
+  // 获取版本详情
+  getVersionDetail: async (sessionId: string, chapterIndex: number, versionId: string): Promise<any> => {
+    const response = await apiClient.get(`/chapters/${sessionId}/chapters/${chapterIndex}/versions/${versionId}`);
+    return response.data;
+  },
+
+  // 获取章节上下文信息
+  getChapterContext: async (sessionId: string, chapterIndex: number): Promise<any> => {
+    const response = await apiClient.get(`/chapters/${sessionId}/chapters/${chapterIndex}/context`);
+    return response.data;
+  },
+
+  // 手动编辑并保存章节内容
+  manualEdit: async (
+    sessionId: string,
+    chapterIndex: number,
+    content: string,
+    editReason?: string
+  ): Promise<any> => {
+    const response = await apiClient.post(
+      `/chapters/${sessionId}/chapters/${chapterIndex}/manual-edit`,
+      { content, edit_reason: editReason }
+    );
+    return response.data;
+  },
+};
+
+// Characters API - 人物管理
+export const charactersApi = {
+  // 获取人物列表
+  list: async (sessionId: string, role?: string): Promise<any> => {
+    const response = await apiClient.get(`/characters/${sessionId}`, {
+      params: role ? { role } : {}
+    });
+    return response.data;
+  },
+
+  // 获取人物详情
+  getDetail: async (sessionId: string, characterId: string): Promise<any> => {
+    const response = await apiClient.get(`/characters/${sessionId}/${characterId}`);
+    return response.data;
+  },
+
+  // 获取人物统计
+  getStats: async (sessionId: string): Promise<any> => {
+    const response = await apiClient.get(`/characters/${sessionId}/stats`);
+    return response.data;
+  },
+
+  // 创建人物
+  create: async (sessionId: string, data: any): Promise<any> => {
+    const response = await apiClient.post(`/characters/${sessionId}`, data);
+    return response.data;
+  },
+
+  // 更新人物
+  update: async (sessionId: string, characterId: string, data: any): Promise<any> => {
+    const response = await apiClient.put(`/characters/${sessionId}/${characterId}`, data);
+    return response.data;
+  },
+
+  // 删除人物
+  delete: async (sessionId: string, characterId: string): Promise<any> => {
+    const response = await apiClient.delete(`/characters/${sessionId}/${characterId}`);
+    return response.data;
+  },
+};
+
+// Foreshadows API - 伏笔追踪
+export const foreshadowsApi = {
+  // 获取伏笔列表
+  list: async (sessionId: string, status?: string, importance?: string): Promise<any> => {
+    const response = await apiClient.get(`/foreshadows/${sessionId}`, {
+      params: { status, importance }
+    });
+    return response.data;
+  },
+
+  // 获取伏笔统计
+  getStats: async (sessionId: string): Promise<any> => {
+    const response = await apiClient.get(`/foreshadows/${sessionId}/stats`);
+    return response.data;
+  },
+
+  // 获取伏笔警告
+  getWarnings: async (sessionId: string): Promise<any> => {
+    const response = await apiClient.get(`/foreshadows/${sessionId}/warnings`);
+    return response.data;
+  },
+
+  // 获取伏笔详情
+  getDetail: async (sessionId: string, elementId: string): Promise<any> => {
+    const response = await apiClient.get(`/foreshadows/${sessionId}/${elementId}`);
+    return response.data;
+  },
+
+  // 创建伏笔
+  create: async (sessionId: string, data: any): Promise<any> => {
+    const response = await apiClient.post(`/foreshadows/${sessionId}`, data);
+    return response.data;
+  },
+
+  // 更新伏笔
+  update: async (sessionId: string, elementId: string, data: any): Promise<any> => {
+    const response = await apiClient.put(`/foreshadows/${sessionId}/${elementId}`, data);
+    return response.data;
+  },
+
+  // 删除伏笔
+  delete: async (sessionId: string, elementId: string): Promise<any> => {
+    const response = await apiClient.delete(`/foreshadows/${sessionId}/${elementId}`);
+    return response.data;
+  },
+};
+
+// Derivative API - 二创配置
+export const derivativeApi = {
+  // 获取二创配置
+  getConfig: async (sessionId: string): Promise<any> => {
+    const response = await apiClient.get(`/derivative/${sessionId}`);
+    return response.data;
+  },
+
+  // 创建二创配置
+  createConfig: async (sessionId: string, data: any): Promise<any> => {
+    const response = await apiClient.post(`/derivative/${sessionId}`, data);
+    return response.data;
+  },
+
+  // 更新二创配置
+  updateConfig: async (sessionId: string, data: any): Promise<any> => {
+    const response = await apiClient.put(`/derivative/${sessionId}`, data);
+    return response.data;
+  },
+
+  // 删除二创配置
+  deleteConfig: async (sessionId: string): Promise<any> => {
+    const response = await apiClient.delete(`/derivative/${sessionId}`);
+    return response.data;
+  },
+
+  // 开始生成二创作品
+  generate: async (sessionId: string): Promise<any> => {
+    const response = await apiClient.post(`/derivative/${sessionId}/generate`);
     return response.data;
   },
 };

@@ -308,11 +308,40 @@ async def handle_start(
     try:
         logger.info(f"🔧 Creating engine for session {session_id[:8]}")
 
-        # 🔥 加载已完成的任务，以便恢复
-        # 注意：get_task_results 不支持 status 参数，需要获取后过滤
+        # 🔥 加载任务，智能判断要跳过的任务
+        # 逻辑：如果最后一个任务状态是 completed，跳过所有 completed 任务
+        #       如果最后一个任务状态不是 completed（如 failed），只跳到它之前的 completed 任务
+        # 注意：因为 TaskPlanner 每次会生成新的 task_id，所以需要传递完整的任务记录，
+        #      让 TaskPlanner 通过 task_type + chapter_index 来智能匹配
         all_tasks = await storage.get_task_results(session_id)
-        completed_tasks = [t for t in all_tasks if t.get("status") == "completed"]
-        logger.info(f"📋 Found {len(completed_tasks)} completed tasks out of {len(all_tasks)} total tasks for session {session_id[:8]}")
+
+        # 按创建时间排序（确保最后创建的任务在最后）
+        all_tasks_sorted = sorted(all_tasks, key=lambda t: t.get("created_at", ""))
+
+        # 确定要传递给 TaskPlanner 的已完成任务记录
+        completed_task_records = []
+        if all_tasks_sorted:
+            last_task = all_tasks_sorted[-1]
+            last_task_status = last_task.get("status")
+            last_task_type = last_task.get("task_type", "unknown")
+
+            logger.info(f"📊 Last task status: {last_task_status} (type: {last_task_type})")
+
+            if last_task_status == "completed":
+                # 最后一个任务已完成，传递所有 completed 任务记录
+                completed_task_records = [t for t in all_tasks if t.get("status") == "completed"]
+                logger.info(f"✅ Last task completed, will skip all {len(completed_task_records)} completed tasks and start next")
+            else:
+                # 最后一个任务未完成（failed/其他），只传递它之前的 completed 任务记录
+                last_task_idx = all_tasks_sorted.index(last_task)
+                completed_task_records = [
+                    t for t in all_tasks_sorted[:last_task_idx]
+                    if t.get("status") == "completed"
+                ]
+                logger.info(f"⚠️ Last task {last_task_type} is {last_task_status}, will retry it")
+                logger.info(f"📋 Passing {len(completed_task_records)} completed task records to TaskPlanner")
+
+        logger.info(f"📋 Total tasks in DB: {len(all_tasks)}, Completed task records to match: {len(completed_task_records)}")
 
         # Create loop engine
         from creative_autogpt.modes.novel import NovelMode
@@ -330,7 +359,7 @@ async def handle_start(
         from creative_autogpt.core.vector_memory import TaskResult
         from creative_autogpt.storage.vector_store import MemoryType
 
-        for task_result in completed_tasks:
+        for task_result in completed_task_records:
             try:
                 # 确定任务类型对应的 memory_type
                 task_type = task_result.get("task_type", "")
@@ -367,7 +396,7 @@ async def handle_start(
             except Exception as e:
                 logger.warning(f"⚠️ Failed to load task {task_result.get('task_type')} into memory: {e}")
 
-        logger.info(f"✅ Loaded {len(completed_tasks)} completed tasks into memory")
+        logger.info(f"✅ Loaded {len(completed_task_records)} completed task records into memory")
 
         # 🔥 初始化插件系统
         plugin_manager = PluginManager()
@@ -639,14 +668,13 @@ async def handle_start(
                 chapter_count = goal.get("chapter_count") or session.get("config", {}).get("chapter_count")
                 logger.info(f"📚 Starting engine.run with goal: {goal.get('title', 'Untitled')}, chapters: {chapter_count}")
 
-                # 🔥 传递已完成的任务ID列表，让 engine 跳过这些任务
-                completed_task_ids = [t.get("task_id") for t in completed_tasks if t.get("task_id")]
-                logger.info(f"⏭️ Skipping {len(completed_task_ids)} completed tasks")
+                # 🔥 传递已完成的任务记录列表，让 TaskPlanner 通过 task_type + chapter_index 智能匹配
+                logger.info(f"⏭️ Passing {len(completed_task_records)} completed task records to engine")
 
                 result = await engine.run(
                     goal=goal,
                     chapter_count=chapter_count,
-                    completed_task_ids=completed_task_ids,  # 🔥 传递已完成的任务ID
+                    completed_task_records=completed_task_records,  # 🔥 传递已完成的任务记录（而不仅仅是 ID）
                 )
 
                 # Send completion event based on execution status

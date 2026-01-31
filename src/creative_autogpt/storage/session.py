@@ -10,7 +10,7 @@ from enum import Enum
 from typing import Any, Dict, List, Optional
 
 from loguru import logger
-from sqlalchemy import Column, String, Integer, Text, DateTime, JSON, Boolean, select, delete
+from sqlalchemy import Column, String, Integer, Text, DateTime, JSON, Boolean, Float, Index, select, delete, update
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
 from sqlalchemy.orm import declarative_base
 
@@ -96,6 +96,48 @@ class PluginDataModel(Base_Model):
 
     # Composite index for efficient plugin data retrieval
     __table_args__ = (
+        {'sqlite_autoincrement': True}
+    )
+
+
+class ChapterVersionModel(Base_Model):
+    """SQLAlchemy model for chapter version history"""
+
+    __tablename__ = "chapter_versions"
+
+    id = Column(String, primary_key=True)
+    session_id = Column(String, nullable=False, index=True)
+    task_id = Column(String, nullable=False, index=True)
+    chapter_index = Column(Integer, nullable=False, index=True)
+
+    # 版本信息
+    version_number = Column(Integer, nullable=False)  # v1=1, v2=2, v3=3
+    is_current = Column(Boolean, default=False)  # 是否为当前版本
+
+    # 内容
+    content = Column(Text, nullable=False)
+
+    # 评估信息
+    score = Column(Float)  # 总分 0-1
+    quality_score = Column(Float)  # 质量分
+    consistency_score = Column(Float)  # 一致性分
+    evaluation = Column(JSON)  # 完整评估结果
+
+    # 元数据
+    created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+    created_by = Column(String)  # "auto" | "manual" | "rewrite"
+    rewrite_reason = Column(Text)  # 重写原因（如果是重写版本）
+
+    # Token 统计
+    total_tokens = Column(Integer, default=0)
+    prompt_tokens = Column(Integer, default=0)
+    completion_tokens = Column(Integer, default=0)
+    cost_usd = Column(Float, default=0.0)
+
+    # 复合索引：session_id + chapter_index + version_number
+    __table_args__ = (
+        Index('ix_chapter_versions_session_chapter_version',
+              'session_id', 'chapter_index', 'version_number'),
         {'sqlite_autoincrement': True}
     )
 
@@ -369,6 +411,97 @@ class SessionStorage:
                     result.rewrite_task_type = rewrite_task_type
 
                 await session.commit()
+                return True
+
+        return False
+
+    async def save_engine_state(
+        self,
+        session_id: str,
+        engine_state: Dict[str, Any],
+        current_task_index: Optional[int] = None,
+    ) -> bool:
+        """
+        Save engine execution state for resume capability
+
+        Args:
+            session_id: The session ID
+            engine_state: Engine state dictionary containing:
+                - completed_task_ids: List of completed task IDs
+                - current_task: Current task being executed
+                - stats: Execution statistics
+                - context: Memory context
+            current_task_index: Current task index in the queue
+
+        Returns:
+            True if successful
+        """
+        async with self.session_factory() as session:
+            result = await session.get(SessionModel, session_id)
+
+            if result:
+                result.engine_state = engine_state
+                if current_task_index is not None:
+                    result.current_task_index = current_task_index
+                result.is_resumable = True
+                result.updated_at = datetime.utcnow()
+
+                await session.commit()
+                logger.info(f"Saved engine state for session {session_id}")
+                return True
+
+        return False
+
+    async def load_engine_state(
+        self,
+        session_id: str,
+    ) -> Optional[Dict[str, Any]]:
+        """
+        Load engine execution state for resume
+
+        Args:
+            session_id: The session ID
+
+        Returns:
+            Engine state dictionary or None if not found
+        """
+        async with self.session_factory() as session:
+            result = await session.get(SessionModel, session_id)
+
+            if result and result.engine_state:
+                logger.info(f"Loaded engine state for session {session_id}")
+                return {
+                    "engine_state": result.engine_state,
+                    "current_task_index": result.current_task_index,
+                    "is_resumable": result.is_resumable,
+                }
+
+        return None
+
+    async def clear_engine_state(
+        self,
+        session_id: str,
+    ) -> bool:
+        """
+        Clear engine state (e.g., after completion)
+
+        Args:
+            session_id: The session ID
+
+        Returns:
+            True if successful
+        """
+        async with self.session_factory() as session:
+            result = await session.get(SessionModel, session_id)
+
+            if result:
+                result.engine_state = None
+                result.current_task_index = None
+                result.is_resumable = False
+                result.updated_at = datetime.utcnow()
+
+                await session.commit()
+                logger.info(f"Cleared engine state for session {session_id}")
                 return True
 
         return False
@@ -743,6 +876,235 @@ class SessionStorage:
             await session.execute(stmt)
             await session.commit()
             return True
+
+    # ========== 章节版本管理方法 ==========
+
+    async def create_chapter_version(
+        self,
+        session_id: str,
+        task_id: str,
+        chapter_index: int,
+        content: str,
+        version_number: int,
+        is_current: bool = False,
+        evaluation: Optional[Dict[str, Any]] = None,
+        created_by: str = "auto",
+        rewrite_reason: Optional[str] = None,
+        token_stats: Optional[Dict[str, Any]] = None,
+    ) -> str:
+        """
+        创建新章节版本
+
+        Args:
+            session_id: 会话ID
+            task_id: 任务ID
+            chapter_index: 章节索引
+            content: 章节内容
+            version_number: 版本号 (v1=1, v2=2, ...)
+            is_current: 是否为当前版本
+            evaluation: 评估结果
+            created_by: 创建方式 ("auto" | "manual" | "rewrite")
+            rewrite_reason: 重写原因
+            token_stats: Token 统计信息
+
+        Returns:
+            版本ID
+        """
+        version_id = str(uuid.uuid4())
+
+        async with self.session_factory() as session:
+            # 如果是当前版本，先取消其他版本的当前状态
+            if is_current:
+                stmt = update(ChapterVersionModel).where(
+                    ChapterVersionModel.session_id == session_id,
+                    ChapterVersionModel.chapter_index == chapter_index,
+                ).values(is_current=False)
+                await session.execute(stmt)
+
+            # 创建新版本
+            chapter_version = ChapterVersionModel(
+                id=version_id,
+                session_id=session_id,
+                task_id=task_id,
+                chapter_index=chapter_index,
+                version_number=version_number,
+                is_current=is_current,
+                content=content,
+                score=evaluation.get("score") if evaluation else None,
+                quality_score=evaluation.get("quality_score") if evaluation else None,
+                consistency_score=evaluation.get("consistency_score") if evaluation else None,
+                evaluation=evaluation,
+                created_by=created_by,
+                rewrite_reason=rewrite_reason,
+                total_tokens=token_stats.get("total_tokens", 0) if token_stats else 0,
+                prompt_tokens=token_stats.get("prompt_tokens", 0) if token_stats else 0,
+                completion_tokens=token_stats.get("completion_tokens", 0) if token_stats else 0,
+                cost_usd=token_stats.get("cost", 0.0) if token_stats else 0.0,
+            )
+            session.add(chapter_version)
+
+            # 更新 task_results 的 current_version_id
+            stmt = update(TaskResultModel).where(
+                TaskResultModel.task_id == task_id
+            ).values(current_version_id=version_id)
+            await session.execute(stmt)
+
+            await session.commit()
+            logger.info(f"Created chapter version {version_number} for chapter {chapter_index} in session {session_id}")
+            return version_id
+
+    async def get_chapter_versions(
+        self,
+        session_id: str,
+        chapter_index: int,
+    ) -> List[Dict[str, Any]]:
+        """
+        获取章节的所有版本
+
+        Args:
+            session_id: 会话ID
+            chapter_index: 章节索引
+
+        Returns:
+            版本列表，按版本号降序排列
+        """
+        async with self.session_factory() as session:
+            stmt = select(ChapterVersionModel).where(
+                ChapterVersionModel.session_id == session_id,
+                ChapterVersionModel.chapter_index == chapter_index,
+            ).order_by(ChapterVersionModel.version_number.desc())
+
+            result = await session.execute(stmt)
+            versions = result.scalars().all()
+
+            return [
+                {
+                    "id": v.id,
+                    "version_number": v.version_number,
+                    "is_current": v.is_current,
+                    "content": v.content,
+                    "score": v.score,
+                    "quality_score": v.quality_score,
+                    "consistency_score": v.consistency_score,
+                    "evaluation": v.evaluation,
+                    "created_at": v.created_at.isoformat(),
+                    "created_by": v.created_by,
+                    "rewrite_reason": v.rewrite_reason,
+                    "token_stats": {
+                        "total_tokens": v.total_tokens,
+                        "prompt_tokens": v.prompt_tokens,
+                        "completion_tokens": v.completion_tokens,
+                        "cost_usd": v.cost_usd,
+                    }
+                }
+                for v in versions
+            ]
+
+    async def restore_chapter_version(
+        self,
+        session_id: str,
+        task_id: str,
+        version_id: str,
+    ) -> bool:
+        """
+        恢复到指定版本
+
+        Args:
+            session_id: 会话ID
+            task_id: 任务ID
+            version_id: 版本ID
+
+        Returns:
+            是否成功恢复
+        """
+        async with self.session_factory() as session:
+            # 获取要恢复的版本
+            version = await session.get(ChapterVersionModel, version_id)
+            if not version or version.session_id != session_id:
+                logger.warning(f"Version {version_id} not found in session {session_id}")
+                return False
+
+            # 取消其他版本的当前状态
+            stmt = update(ChapterVersionModel).where(
+                ChapterVersionModel.session_id == session_id,
+                ChapterVersionModel.chapter_index == version.chapter_index,
+            ).values(is_current=False)
+            await session.execute(stmt)
+
+            # 设置此版本为当前
+            version.is_current = True
+
+            # 更新 task_results
+            stmt = update(TaskResultModel).where(
+                TaskResultModel.task_id == task_id
+            ).values(
+                result=version.content,
+                current_version_id=version_id,
+                evaluation=version.evaluation,
+            )
+            await session.execute(stmt)
+
+            await session.commit()
+            logger.info(f"Restored chapter {version.chapter_index} to version {version.version_number} in session {session_id}")
+            return True
+
+    async def update_task_version_count(
+        self,
+        task_id: str,
+        version_count: int,
+    ) -> bool:
+        """
+        更新任务的版本计数
+
+        Args:
+            task_id: 任务ID
+            version_count: 版本总数
+
+        Returns:
+            是否成功
+        """
+        async with self.session_factory() as session:
+            stmt = update(TaskResultModel).where(
+                TaskResultModel.task_id == task_id
+            ).values(version_count=version_count)
+            await session.execute(stmt)
+            await session.commit()
+            return True
+
+    async def get_current_chapter_version(
+        self,
+        session_id: str,
+        chapter_index: int,
+    ) -> Optional[Dict[str, Any]]:
+        """
+        获取章节的当前版本
+
+        Args:
+            session_id: 会话ID
+            chapter_index: 章节索引
+
+        Returns:
+            当前版本信息，如果没有则返回 None
+        """
+        async with self.session_factory() as session:
+            stmt = select(ChapterVersionModel).where(
+                ChapterVersionModel.session_id == session_id,
+                ChapterVersionModel.chapter_index == chapter_index,
+                ChapterVersionModel.is_current == True,
+            )
+            result = await session.execute(stmt)
+            version = result.scalar_one_or_none()
+
+            if version:
+                return {
+                    "id": version.id,
+                    "version_number": version.version_number,
+                    "content": version.content,
+                    "score": version.score,
+                    "evaluation": version.evaluation,
+                    "created_at": version.created_at.isoformat(),
+                }
+            return None
 
     async def close(self) -> None:
         """Close database connection"""

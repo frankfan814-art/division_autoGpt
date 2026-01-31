@@ -12,3 +12,7 @@ export { useTasks, useTaskProgress, useFilteredTasks } from './useTask';
 export { useChat } from './useChat';
 
 export { usePreview } from './usePreview';
+
+// 🔥 新增：章节版本管理 hooks
+export { useChapters, useChapterVersions, useChapterVersionDetail } from './useChapter';
+export type { ChapterVersion, ChapterInfo } from './useChapter';

@@ -513,6 +513,16 @@ class PluginManager:
             data["elements"] = plugin.get_elements()
         elif plugin_name == "scene":
             data["scenes"] = plugin.get_scenes()
+        elif plugin_name == "power":
+            data["power_systems"] = plugin.get_power_system()
+            data["techniques"] = plugin.get_all_techniques()
+            data["treasures"] = plugin.get_all_treasures()
+        elif plugin_name == "growth":
+            data["growth_paths"] = plugin.get_growth_path("main")
+            data["awakening_moments"] = plugin._awakening_moments
+        elif plugin_name == "villain":
+            data["villains"] = plugin.get_all_villains()
+            data["villain_hierarchy"] = plugin.get_villain_hierarchy()
 
         return data
 
@@ -625,12 +635,14 @@ class PluginManager:
         """
         Synchronize states between related plugins
 
+        This implements the 4th verification layer - plugin state synchronization
+
         Args:
             context: Writing context
         """
-        logger.info("Synchronizing plugin states...")
+        logger.info("🔄 Synchronizing plugin states...")
 
-        # Sync character and dialogue plugins
+        # ========== 1. Sync character and dialogue plugins ==========
         character_plugin = self._enabled.get("character")
         dialogue_plugin = self._enabled.get("dialogue")
 
@@ -639,6 +651,7 @@ class PluginManager:
             voice_profiles = dialogue_plugin.get_all_voice_profiles()
 
             # Ensure all major characters have voice profiles
+            new_profiles = 0
             for char_id, char_data in characters.items():
                 char_name = char_data.get("name", char_id)
                 if char_data.get("role") in ["protagonist", "supporting"]:
@@ -647,5 +660,94 @@ class PluginManager:
                         voice_data = char_data.get("voice_profile")
                         if voice_data:
                             dialogue_plugin.set_voice_profile(char_id, voice_data)
+                            new_profiles += 1
+                        else:
+                            # Auto-generate voice profile from personality traits
+                            personality = char_data.get("personality", {})
+                            traits = personality.get("traits", [])
+                            if traits:
+                                auto_profile = {
+                                    "voice": "calm" if "冷静" in traits else "energetic",
+                                    "speech_pattern": "direct" if "直爽" in traits else "polite",
+                                    "catchphrases": [],
+                                }
+                                dialogue_plugin.set_voice_profile(char_id, auto_profile)
+                                new_profiles += 1
 
-        logger.info("Plugin state synchronization complete")
+            if new_profiles > 0:
+                logger.info(f"  ✅ Created {new_profiles} voice profiles for characters")
+
+        # ========== 2. Auto-update character relationships ==========
+        if character_plugin:
+            characters = character_plugin.get_characters()
+            relationships = character_plugin.get_relationships() or {}
+
+            # Auto-build relationships from character data
+            updated_count = 0
+            for char_id, char_data in characters.items():
+                if char_id not in relationships:
+                    relationships[char_id] = []
+
+                # Infer relationships from background/goals
+                char_goals = char_data.get("goals", {})
+                main_goal = char_goals.get("main", "")
+
+                # Look for related characters
+                for other_id, other_data in characters.items():
+                    if char_id == other_id:
+                        continue
+
+                    # Check if relationship already exists
+                    existing = any(r.get("character_id") == other_id for r in relationships[char_id])
+                    if existing:
+                        continue
+
+                    # Infer relationship from goals/background
+                    other_goals = other_data.get("goals", {})
+                    other_main = other_goals.get("main", "")
+
+                    relationship = None
+                    if char_data.get("role") == "protagonist" and other_data.get("role") == "supporting":
+                        relationship = {"character_id": other_id, "type": "ally", "description": "主角团成员"}
+                    elif char_data.get("role") == "protagonist" and other_data.get("role") == "antagonist":
+                        relationship = {"character_id": other_id, "type": "enemy", "description": "敌对关系"}
+                    elif "同门" in main_goal and "同门" in other_main:
+                        relationship = {"character_id": other_id, "type": "sect_member", "description": "同门"}
+
+                    if relationship:
+                        relationships[char_id].append(relationship)
+                        updated_count += 1
+
+            if updated_count > 0:
+                character_plugin._relationships = relationships
+                logger.info(f"  ✅ Auto-updated {updated_count} character relationships")
+
+        # ========== 3. Sync event and foreshadow plugins ==========
+        event_plugin = self._enabled.get("event")
+        foreshadow_plugin = self._enabled.get("foreshadow")
+
+        if event_plugin and foreshadow_plugin:
+            events = event_plugin.get_events()
+            elements = foreshadow_plugin.get_elements()
+
+            # Check for major events that need foreshadowing
+            for event in events:
+                if event.get("importance") == "major":
+                    event_chapter = event.get("chapter", 0)
+                    event_name = event.get("name", "unnamed")
+
+                    # Check if already has foreshadowing
+                    has_foreshadow = any(
+                        elem.get("plant_chapter", 999) < event_chapter
+                        for elem in elements
+                        if elem.get("name") == event_name
+                    )
+
+                    if not has_foreshadow and event_chapter > 5:
+                        # Suggest creating foreshadow element
+                        logger.warning(
+                            f"  ⚠️ Major event '{event_name}' (ch.{event_chapter}) lacks foreshadowing. "
+                            f"Consider adding foreshadow in chapters 1-{event_chapter-2}."
+                        )
+
+        logger.info("✅ Plugin state synchronization complete")

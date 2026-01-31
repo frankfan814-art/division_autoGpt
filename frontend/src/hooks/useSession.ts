@@ -103,6 +103,17 @@ export const useSessions = (params?: { status?: string; page?: number; page_size
     },
   });
 
+  // Skip chapter mutation
+  const skipChapterMutation = useMutation({
+    mutationFn: ({ sessionId, chapterIndex }: { sessionId: string; chapterIndex: number }) =>
+      sessionsApi.skipChapter(sessionId, chapterIndex),
+    onSuccess: (_, { sessionId }) => {
+      queryClient.invalidateQueries({ queryKey: ['sessions'] });
+      queryClient.invalidateQueries({ queryKey: ['session', sessionId] });
+      queryClient.invalidateQueries({ queryKey: ['chapterVersions'] });
+    },
+  });
+
   // Get resumable sessions
   const { data: resumableSessions = [] } = useQuery({
     queryKey: ['resumable-sessions'],
@@ -127,6 +138,7 @@ export const useSessions = (params?: { status?: string; page?: number; page_size
     resumeSession: resumeMutation.mutateAsync,
     stopSession: stopMutation.mutateAsync,
     restoreSession: restoreMutation.mutateAsync,
+    skipChapter: skipChapterMutation.mutateAsync,
 
     isCreating: createMutation.isPending,
     isUpdating: updateMutation.isPending,
@@ -135,6 +147,7 @@ export const useSessions = (params?: { status?: string; page?: number; page_size
     isResuming: resumeMutation.isPending,
     isStopping: stopMutation.isPending,
     isRestoring: restoreMutation.isPending,
+    isSkipping: skipChapterMutation.isPending,
   };
 };
 

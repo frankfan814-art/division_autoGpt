@@ -155,6 +155,43 @@ export const useWebSocket = (options: UseWebSocketOptions = {}) => {
       onStepProgress?.(data);
     });
 
+    // 🔥 新增：章节进度事件 (章节生成进度)
+    ws.subscribe('chapter_progress', (data) => {
+      const { chapter_index, status, progress } = data as any;
+      logger.debug('📖 Chapter progress:', chapter_index, status, progress);
+      // 更新进度状态，添加章节信息
+      setProgress((prev: any) => ({
+        ...prev,
+        current_chapter: chapter_index,
+        current_chapter_status: status,
+        current_chapter_progress: progress,
+      }));
+      onProgress?.(data);
+    });
+
+    // 🔥 新增：章节完成事件
+    ws.subscribe('chapter_completed', (data) => {
+      const { chapter_index, status, score } = data as any;
+      logger.debug('✅ Chapter completed:', chapter_index, status, score);
+      // 更新任务存储中的章节信息
+      onTaskUpdate?.(data);
+    });
+
+    // 🔥 新增：重写尝试事件
+    ws.subscribe('rewrite_attempt', (data) => {
+      const { chapter_index, attempt, score, issues } = data as any;
+      logger.debug('🔄 Rewrite attempt:', chapter_index, attempt, score);
+      // 更新进度状态，添加重写信息
+      setProgress((prev: any) => ({
+        ...prev,
+        is_rewriting: true,
+        rewrite_attempt: attempt,
+        rewrite_score: score,
+        rewrite_issues: issues,
+      }));
+      onProgress?.(data);
+    });
+
     // Subscribe to session status events
     const unsubscribeCompleted = ws.subscribe('completed', (data) => {
       const { session_id, stats } = data as any;
