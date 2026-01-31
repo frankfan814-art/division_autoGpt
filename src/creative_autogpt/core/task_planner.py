@@ -35,6 +35,9 @@ class NovelTaskType(str, Enum):
     TIMELINE = "时间线"  # 事件时间顺序、人物年龄变化
     FORESHADOW_LIST = "伏笔列表"  # 伏笔管理，包含名称、埋设章节、回收章节
 
+    # Phase 2.5: Story Unit Planning (故事单元规划 - 模块化三幕结构)
+    STORY_UNIT_PLAN = "故事单元规划"  # 每个模块/单元的详细剧情规划
+
     # Phase 3: Quality Check (质量检查 - 每章后自动运行)
     CONSISTENCY_CHECK = "一致性检查"  # 检查人物、世界观、时间线一致性
     DIALOGUE_CHECK = "对话检查"  # 检查角色对话风格一致性
@@ -363,6 +366,7 @@ class TaskPlanner:
         chapter_count: Optional[int] = None,
         completed_task_ids: Optional[List[str]] = None,
         completed_task_records: Optional[List[Dict[str, Any]]] = None,
+        modular_structure: Optional[Any] = None,
     ) -> List[Task]:
         """
         Generate a task plan based on the creation goal
@@ -372,6 +376,7 @@ class TaskPlanner:
             chapter_count: Number of chapters to create (启用逐章生成模式)
             completed_task_ids: [DEPRECATED] List of already completed task IDs (for resume)
             completed_task_records: List of completed task records for intelligent matching by task_type + chapter_index
+            modular_structure: Modular three-act structure for story unit planning
 
         Returns:
             List of tasks ready for execution
@@ -457,7 +462,8 @@ class TaskPlanner:
         # Create chapter tasks if chapter count specified (逐章生成模式)
         if chapter_count:
             logger.info(f"🔥 逐章生成模式已启用：{chapter_count}章，每章依赖前一章确保连贯性")
-            await self._create_chapter_tasks(chapter_count, goal)
+            logger.info(f"🔥 模块化结构支持：{len(modular_structure.modules) if modular_structure else '按每100章自动划分'}个故事单元")
+            await self._create_chapter_tasks(chapter_count, goal, modular_structure)
         else:
             logger.warning("⚠️ 未指定章节数量，将跳过章节生成！请确保在 goal 中提供 chapter_count 参数")
 
@@ -506,32 +512,110 @@ class TaskPlanner:
         self,
         chapter_count: int,
         goal: Dict[str, Any],
+        modular_structure: Optional[Any] = None,
     ) -> None:
         """
         创建章节任务（逐章生成方案）
 
+        增强版：支持模块化三幕结构，先创建故事单元规划任务
         逐章生成流程：
-        1. 每个章节单独生成（章节内容，使用 Qwen Long 直接生成高质量内容）
-        2. 每个章节依赖于前面章节（保证连贯性）
-        3. 无需单独润色步骤（已整合到章节生成提示词中）
+        1. 创建故事单元规划任务（每个模块一个）
+        2. 每个章节的生成依赖于所属单元规划任务
+        3. 每个章节单独生成（章节内容，使用 Qwen Long 直接生成高质量内容）
+        4. 每个章节依赖于前面章节（保证连贯性）
+        5. 无需单独润色步骤（已整合到章节生成提示词中）
         """
-        logger.info(f"Creating tasks for {chapter_count} chapters (逐章生成方案，使用 Qwen Long 直接生成高质量内容)")
+        logger.info(f"Creating tasks for {chapter_count} chapters with modular structure support")
 
-        # Phase 3: 逐章生成任务
-        # 每个章节依赖于：所有基础设定任务 + 上一章节
+        # 🔥 Phase 3a: 创建故事单元规划任务（每个模块一个）
+        unit_plan_tasks = {}  # unit_number -> task_id
+        
+        if modular_structure:
+            # 根据模块化结构创建单元规划任务
+            for module in modular_structure.modules:
+                unit_number = module.module_number
+                
+                # 创建故事单元规划任务
+                unit_plan_task = Task(
+                    task_id=str(uuid.uuid4()),
+                    task_type=NovelTaskType.STORY_UNIT_PLAN,
+                    description=f"规划故事单元{unit_number}：{module.title}（第{module.start_chapter}-{module.end_chapter}章）",
+                    depends_on=[
+                        "大纲", "世界观规则", "势力设计", "场景设计",
+                        "人物设计", "功法法宝", "主角成长", "反派设计",
+                    ],
+                    metadata={
+                        "unit_number": unit_number,
+                        "unit_title": module.title,
+                        "chapter_start": module.start_chapter,
+                        "chapter_end": module.end_chapter,
+                        "world_level": module.world_level,
+                        "power_start": module.power_level_start,
+                        "power_end": module.power_level_end,
+                        "module_size": module.get_chapter_count(),
+                        "plugin": "story_unit",
+                        "operation": "plan",
+                    },
+                )
+                self.tasks[unit_plan_task.task_id] = unit_plan_task
+                unit_plan_tasks[unit_number] = unit_plan_task.task_id
+                logger.info(f"  Created story unit plan task for Unit {unit_number}: {module.title}")
+        else:
+            # 如果没有模块化结构，按每100章创建一个单元规划
+            module_size = 100
+            num_units = max(1, chapter_count // module_size + (1 if chapter_count % module_size else 0))
+            
+            for unit_number in range(1, num_units + 1):
+                start_chapter = (unit_number - 1) * module_size + 1
+                end_chapter = min(unit_number * module_size, chapter_count)
+                
+                unit_plan_task = Task(
+                    task_id=str(uuid.uuid4()),
+                    task_type=NovelTaskType.STORY_UNIT_PLAN,
+                    description=f"规划故事单元{unit_number}（第{start_chapter}-{end_chapter}章）",
+                    depends_on=[
+                        "大纲", "世界观规则", "势力设计", "场景设计",
+                        "人物设计", "功法法宝", "主角成长", "反派设计",
+                    ],
+                    metadata={
+                        "unit_number": unit_number,
+                        "chapter_start": start_chapter,
+                        "chapter_end": end_chapter,
+                        "module_size": end_chapter - start_chapter + 1,
+                        "plugin": "story_unit",
+                        "operation": "plan",
+                    },
+                )
+                self.tasks[unit_plan_task.task_id] = unit_plan_task
+                unit_plan_tasks[unit_number] = unit_plan_task.task_id
+                logger.info(f"  Created story unit plan task for Unit {unit_number} (Chapters {start_chapter}-{end_chapter})")
+        
+        logger.info(f"✅ Created {len(unit_plan_tasks)} story unit plan tasks")
+
+        # Phase 3b: 逐章生成任务
+        # 每个章节依赖于：所有基础设定任务 + 所属单元规划任务 + 上一章节
         previous_chapter_task_id = None
 
         for chapter_index in range(1, chapter_count + 1):
-            # 构建依赖列表 - 包含所有基础设定
+            # 确定所属单元
+            unit_number = (chapter_index - 1) // 100 + 1  # 简单计算，每100章一个单元
+            
+            # 构建依赖列表
             depends_on = [
                 "大纲", "世界观规则", "势力设计", "场景设计",
                 "人物设计", "功法法宝", "主角成长", "反派设计",
-                "事件", "时间线", "伏笔列表"
+                "事件", "时间线", "伏笔列表",
             ]
+            
+            # 添加所属单元规划任务作为依赖
+            if unit_number in unit_plan_tasks:
+                depends_on.append(unit_plan_tasks[unit_number])
+            
+            # 添加上一章节作为依赖
             if previous_chapter_task_id:
                 depends_on.append(previous_chapter_task_id)
 
-            # 创建章节内容任务（直接生成高质量，无需润色）
+            # 创建章节内容任务
             chapter_task = Task(
                 task_id=str(uuid.uuid4()),
                 task_type=NovelTaskType.CHAPTER_CONTENT,
@@ -540,10 +624,11 @@ class TaskPlanner:
                 metadata={
                     "chapter_index": chapter_index,
                     "chapter_count": chapter_count,
+                    "unit_number": unit_number,
                     "goal_style": goal.get("style"),
                     "goal_length": goal.get("length"),
                     "is_first_chapter": chapter_index == 1,
-                    "direct_quality": True,  # 标记：直接生成高质量，无需润色
+                    "direct_quality": True,
                 },
             )
             self.tasks[chapter_task.task_id] = chapter_task

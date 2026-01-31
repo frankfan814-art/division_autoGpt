@@ -20,6 +20,7 @@ from creative_autogpt.plugins.example_extractor import ExampleExtractorPlugin
 from creative_autogpt.plugins.power import PowerPlugin
 from creative_autogpt.plugins.growth import GrowthPlugin
 from creative_autogpt.plugins.villain import VillainPlugin
+from creative_autogpt.plugins.story_unit import StoryUnitPlugin
 
 __all__ = [
     "NovelElementPlugin",
@@ -39,4 +40,5 @@ __all__ = [
     "PowerPlugin",
     "GrowthPlugin",
     "VillainPlugin",
+    "StoryUnitPlugin",
 ]

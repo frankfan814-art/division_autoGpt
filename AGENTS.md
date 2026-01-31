@@ -103,10 +103,11 @@ All features from `docs/progressive_writing_plan.md` have been fully implemented
 | Phase 4 | Events | ✅ | Detailed event planning (chapters, characters, causes, outcomes) |
 | Phase 4 | Timeline | ✅ | Event sequence, character age changes, cultivation time spans |
 | Phase 5 | Foreshadow List | ✅ | Systematic foreshadowing management |
+| Phase 5 | Story Unit Plan | ✅ | Detailed planning for each story module (100-200 chapters) |
 | Phase 6 | Chapter Content | ✅ | Chapter-by-chapter generation with dependency tracking |
 | Phase 7 | Quality Check | ✅ | Consistency check + Dialogue check (auto-run after each chapter) |
 
-### Plugin System (10 Plugins - All Implemented)
+### Plugin System (11 Plugins - All Implemented)
 
 | Plugin | File | Purpose | Status |
 |--------|------|---------|--------|
@@ -120,6 +121,7 @@ All features from `docs/progressive_writing_plan.md` have been fully implemented
 | PowerPlugin | `plugins/power.py` | Techniques, magical treasures, power systems | ✅ |
 | GrowthPlugin | `plugins/growth.py` | Protagonist cultivation, breakthroughs | ✅ |
 | VillainPlugin | `plugins/villain.py` | Antagonist hierarchy, development arcs | ✅ |
+| StoryUnitPlugin | `plugins/story_unit.py` | Story module planning, unit-level plot architecture | ✅ |
 | ExampleExtractorPlugin | `plugins/example_extractor.py` | High-quality content examples | ✅ |
 
 ### Core Features (All Implemented)
@@ -245,6 +247,66 @@ python scripts/test_system.py
 
 ## Architecture
 
+### Modular Three-Act Structure for Long-Form Web Novels
+
+The system implements an "infinite repeating three-act structure" specifically optimized for long-form web novels (300-1000 chapters).
+
+**Core Concept**: Instead of applying one three-act structure to the entire novel (which doesn't work for 1000 chapters), the novel is divided into multiple **story modules** (100-200 chapters each), with each module using a complete three-act structure.
+
+```
+Novel Structure (1000 chapters example):
+├── Module 1: "新手村篇" (Chapters 1-100)
+│   ├── Act 1 (20%): Enter village, establish status quo
+│   ├── Act 2 (60%): Train, conflicts, level up
+│   └── Act 3 (20%): Leave village, small climax
+│
+├── Module 2: "宗门篇" (Chapters 101-250)  
+│   ├── Act 1 (20%): Enter sect, new rules
+│   ├── Act 2 (60%): Competition, breakthroughs
+│   └── Act 3 (20%): Sect tournament, promoted
+│
+├── Module 3: "州城篇" (Chapters 251-450)
+│   ├── Act 1 (20%): Enter city, bigger world
+│   ├── Act 2 (60%): Faction wars, power up
+│   └── Act 3 (20%): State tournament, famous
+│
+... (continue for 5-10 modules)
+│
+└── Final Module: "仙界篇" (Last 150 chapters)
+    ├── Act 1: Ascend to immortal realm
+    ├── Act 2: Final preparations
+    └── Act 3: Ultimate boss battle
+```
+
+**Key Files**:
+- `core/modular_structure.py`: Modular structure planner
+- `ModularStructurePlanner`: Plans story modules and three-act breakdown
+- `StoryModule`: Represents one story arc with complete three-act structure
+- `NovelStructure`: Overall novel structure containing multiple modules
+
+**Benefits**:
+1. Each 100-chapter module has its own hook, development, and climax
+2. Continuous small climaxes keep readers engaged
+3. Level-up progression naturally connects modules
+4. World-hopping (新手村→宗门→州城→上界→仙界) creates fresh excitement
+
+**Story Unit Planning** (StoryUnitPlugin):
+- **Purpose**: Detailed planning for each story module (100-200 chapters)
+- **Content**: Unit-level three-act plot, local characters, factions, events, foreshadowing
+- **Timing**: Executed before chapter generation for each module
+- **Benefits**: Ensures coherence within unit, prevents plot holes, manages foreshadowing
+
+**New Task Flow with Story Units**:
+```
+Phase 1: Outline (modular structure overview)
+Phase 2: Elements (characters, world, factions)
+Phase 3: Story Unit Planning (detailed per-module planning)
+        ├── Unit 1 Plan (Chapters 1-100)
+        ├── Unit 2 Plan (Chapters 101-200)
+        └── ... (one plan per 100 chapters)
+Phase 4: Chapter Generation (each chapter depends on its unit plan)
+```
+
 ### Layered Architecture
 
 ```
@@ -281,6 +343,32 @@ Infrastructure Layer (MultiLLMClient, VectorStore, SessionStorage)
 **LLM Routing**: Task types routed via `DEFAULT_TASK_TYPE_MAP`; Qwen for long context tasks, DeepSeek for logic, Doubao for creativity.
 
 **Session Isolation**: Each session gets its own ChromaDB collection; use `session_id` in all storage operations.
+
+### Philosophy Integration (哲学思想融入)
+
+The system integrates Chinese traditional philosophy (Confucianism, Taoism, Buddhism) into novel generation:
+
+**Genre Support** (专注修仙类型):
+- **系统专注修仙小说创作**，内置4种修仙类型：
+  - **修仙** (通用修仙)：完整的升级体系、功法系统、资源争夺
+  - **都市修仙** (现代修仙)：古今结合、日常修仙化、反差萌点
+  - **历史修仙** (朝代修仙)：历史背景扎实、长生视角、朝代修仙差异
+  - **传统修仙** (古典修仙)：融合儒道佛哲学思想、道法自然、内圣外王
+- 所有类型都强调：升级体系、功法系统、心性修为、哲学思想
+
+**Plugin Integration**:
+- **WorldViewPlugin**: World rules based on "天人合一", social structure on "礼"
+- **Faction Design**: Different factions represent different philosophies (Taoist, Confucian, Legalist)
+- **CharacterPlugin**: Characters have philosophical positions and quote classics
+- **GrowthPlugin**: Breakthroughs require philosophical enlightenment, not just power
+- **VillainPlugin**: Villains represent twisted/extreme philosophies
+- **PowerPlugin**: Techniques based on "阴阳五行", "以柔克刚", "厚德载物"
+
+**Key Concepts**:
+- "内圣外王": Inner cultivation matches outer power
+- "知行合一": Theory and practice unified
+- "德位相配": Power must match moral character
+- "悟道": Enlightenment moments quote classics like 《道德经》《论语》
 
 ## Important Notes
 

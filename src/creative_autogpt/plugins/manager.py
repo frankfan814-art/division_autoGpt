@@ -523,6 +523,8 @@ class PluginManager:
         elif plugin_name == "villain":
             data["villains"] = plugin.get_all_villains()
             data["villain_hierarchy"] = plugin.get_villain_hierarchy()
+        elif plugin_name == "story_unit":
+            data["unit_plans"] = plugin.get_all_unit_plans()
 
         return data
 
